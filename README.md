@@ -1,13 +1,13 @@
-# agentbox
+# piecove
 
 Run a coding agent — **Claude Code** or **Pi** — in an isolated container against any repo,
 pointed at any model/provider, with minimal setup. Clone it, point it at a working dir, and
 you're in a shell with both agents installed, your config mirrored, and your tooling ready.
 
 ```bash
-git clone git@github.com:childish-sambino/agentbox.git ~/Workspace/agentbox
-cd ~/Workspace/agentbox
-cp .env.example .env          # set PROVIDER + MODEL + AGENTBOX_API_KEY
+git clone git@github.com:childish-sambino/piecove.git ~/Workspace/piecove
+cd ~/Workspace/piecove
+cp .env.example .env          # set PROVIDER + MODEL + PIECOVE_API_KEY
 ./run.sh ~/code/your-repo     # shell at the repo; run `claude` or `pi`
 ```
 
@@ -15,7 +15,7 @@ cp .env.example .env          # set PROVIDER + MODEL + AGENTBOX_API_KEY
 
 - **Isolation.** The agent only sees the working dir you mount (plus your read-only config).
   It can't touch the rest of your machine, so you can let it run freely.
-- **Any model, any provider.** One set of vars (`PROVIDER` / `MODEL` / `AGENTBOX_API_KEY`)
+- **Any model, any provider.** One set of vars (`PROVIDER` / `MODEL` / `PIECOVE_API_KEY`)
   wires up *both* Claude Code and Pi. Swap GLM-5.2 on Fireworks for Claude on Anthropic by
   editing one line.
 - **Minimal setup.** Ruby version is auto-detected from the repo; Postgres auto-starts when
@@ -53,7 +53,7 @@ Set three things in `.env`:
 
 - `PROVIDER` — `fireworks` | `zai` | `openrouter` | `anthropic` | `bedrock`
 - `MODEL` — leave blank for the provider default, or pick one
-- `AGENTBOX_API_KEY` — your key for that provider (blank for an Anthropic subscription; see below)
+- `PIECOVE_API_KEY` — your key for that provider (blank for an Anthropic subscription; see below)
 
 Then run it against a repo:
 
@@ -100,7 +100,7 @@ Both are preinstalled; run whichever from the shell.
 
 To use a Claude Pro/Max plan instead of an API key:
 
-- Set `PROVIDER=anthropic` and leave `AGENTBOX_API_KEY` blank, then run `claude` → `/login`.
+- Set `PROVIDER=anthropic` and leave `PIECOVE_API_KEY` blank, then run `claude` → `/login`.
 - Or, while pointed at *another* provider, run **`claude-sub`** — a shortcut that strips the
   provider env vars for that one invocation so Claude Code falls back to your subscription
   login. So `claude`/`pi` stay on your cheap default and `claude-sub` is your plan, one word away.
@@ -182,10 +182,10 @@ Mac via `./.auth`, and `host-bridge.sh` (run on your Mac) handles them:
 
 Two named volumes (one per state lifecycle):
 
-- **`agentbox-home`** (external) — all your agent state in one place: Claude Code auth/sessions,
+- **`piecove-home`** (external) — all your agent state in one place: Claude Code auth/sessions,
   Pi auth, Sentry login, shell history. Marked `external` so `docker compose down -v` can't wipe
-  it; `run.sh` ensures it exists. Remove deliberately with `docker volume rm agentbox-home`.
-- **`agentbox-pgdata`** — disposable Postgres data, only with `--db`, recreatable via `db:prepare`.
+  it; `run.sh` ensures it exists. Remove deliberately with `docker volume rm piecove-home`.
+- **`piecove-pgdata`** — disposable Postgres data, only with `--db`, recreatable via `db:prepare`.
 
 Everything else is a bind mount: your repo (`/workspace`), your staged config (`/agent-config`,
 read-only), and the `./.auth` handoff dir.
@@ -216,7 +216,7 @@ commitment. Pick the provider that matches your sensitivity.
 run.sh              launcher: resolves the repo, auto-detects Ruby/Postgres, builds, runs
 Dockerfile          the image: toolchains + Claude Code + Pi + gh + sentry
 entrypoint.sh       wires the provider, mirrors config, sets up git/auth, drops to a shell
-docker-compose.yml  the agentbox service (+ optional db) and volumes
+docker-compose.yml  the piecove service (+ optional db) and volumes
 pi-allowlist.ts     Pi extension enforcing your Claude permissions.allow
 host-bridge.sh      Mac-side: opens OAuth URLs and plays voice notifications
 browser-open.sh     in-container browser shim (hands OAuth URLs to the Mac)

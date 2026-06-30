@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# agentbox — run a coding agent (Claude Code or Pi) in a container against a repo.
+# piecove — run a coding agent (Claude Code or Pi) in a container against a repo.
 #
-#   path/to/agentbox/run.sh ~/code/myrepo        # shell in the repo; run `claude` or `pi`
-#   path/to/agentbox/run.sh .                     # shell in the current dir
-#   path/to/agentbox/run.sh ~/code/myrepo --db    # force-start Postgres
-#   path/to/agentbox/run.sh ~/code/myrepo --no-db # skip Postgres even if detected
-#   path/to/agentbox/run.sh ~/code/myrepo claude  # run a command instead of a shell
+#   path/to/piecove/run.sh ~/code/myrepo        # shell in the repo; run `claude` or `pi`
+#   path/to/piecove/run.sh .                     # shell in the current dir
+#   path/to/piecove/run.sh ~/code/myrepo --db    # force-start Postgres
+#   path/to/piecove/run.sh ~/code/myrepo --no-db # skip Postgres even if detected
+#   path/to/piecove/run.sh ~/code/myrepo claude  # run a command instead of a shell
 #
 # Postgres auto-starts when the repo uses it (a `pg` gem / postgresql database.yml);
 # --db / --no-db force it on or off.
@@ -43,7 +43,7 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 command -v docker >/dev/null 2>&1 || { echo "docker not found — install/start OrbStack or Docker Desktop." >&2; exit 1; }
 
-[ -f .env ] || { echo "No .env — run: cp .env.example .env  (then set PROVIDER/MODEL/AGENTBOX_API_KEY)" >&2; exit 1; }
+[ -f .env ] || { echo "No .env — run: cp .env.example .env  (then set PROVIDER/MODEL/PIECOVE_API_KEY)" >&2; exit 1; }
 
 # Auto-detect the working dir's Ruby version → build the matching interpreter.
 detect_ruby() {
@@ -55,7 +55,7 @@ detect_ruby() {
   fi
 }
 RV="$(detect_ruby "$WORKSPACE_DIR" || true)"
-if [ -n "${RV:-}" ]; then export RUBY_VERSION="$RV"; echo "agentbox: detected Ruby $RUBY_VERSION"; fi
+if [ -n "${RV:-}" ]; then export RUBY_VERSION="$RV"; echo "piecove: detected Ruby $RUBY_VERSION"; fi
 
 # Auto-start Postgres when the repo uses it (overridable with --db / --no-db).
 needs_pg() {
@@ -66,7 +66,7 @@ needs_pg() {
 }
 if [ "$WANT_DB" = "auto" ]; then
   if needs_pg "$WORKSPACE_DIR"; then
-    WANT_DB=1; echo "agentbox: Postgres app detected → starting db (use --no-db to skip)"
+    WANT_DB=1; echo "piecove: Postgres app detected → starting db (use --no-db to skip)"
   else
     WANT_DB=0
   fi
@@ -89,16 +89,16 @@ if docker compose version >/dev/null 2>&1; then compose() { docker compose "$@";
 
 # The home volume is external (so `compose down -v` can't wipe your auth/sessions);
 # ensure it exists. No-op if present; a fresh one is seeded from the image on first mount.
-docker volume create agentbox-home >/dev/null
+docker volume create piecove-home >/dev/null
 
 compose build
 if [ "$WANT_DB" = "1" ]; then
-  echo "agentbox: starting Postgres (--db)…"
+  echo "piecove: starting Postgres (--db)…"
   compose --profile db up -d db
 fi
-echo "agentbox: working on $WORKSPACE_DIR"
+echo "piecove: working on $WORKSPACE_DIR"
 if [ "${#CMD[@]}" -gt 0 ]; then
-  compose run --rm agentbox "${CMD[@]}"
+  compose run --rm piecove "${CMD[@]}"
 else
-  compose run --rm agentbox
+  compose run --rm piecove
 fi

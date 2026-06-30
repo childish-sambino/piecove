@@ -1,11 +1,11 @@
 services:
-  agentbox:
+  piecove:
     build:
       context: .
       args:
         # Auto-detected from the working dir by run.sh; falls back to this.
         RUBY_VERSION: ${RUBY_VERSION:-3.4.1}
-    image: agentbox
+    image: piecove
     env_file: .env
     init: true
     stdin_open: true
@@ -24,7 +24,7 @@ services:
       - ${WORKSPACE_DIR:-./workspace}:/workspace
       # Persist the agent user's home — all tool state in one volume: Claude Code
       # (auth, theme, sessions), Pi, Sentry CLI login, shell history, etc.
-      - agentbox-home:/home/agent
+      - piecove-home:/home/agent
       # Your ~/.claude bits (CLAUDE.md, skills, settings), staged read-only by run.sh.
       - ./.agent-config:/agent-config:ro
       # OAuth-URL / voice-notification handoff to ./host-bridge on your Mac.
@@ -41,7 +41,7 @@ services:
     ports:
       - "${PGPORT:-5432}:5432"
     volumes:
-      - agentbox-pgdata:/var/lib/postgresql/data
+      - piecove-pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-postgres}"]
       interval: 2s
@@ -52,9 +52,9 @@ volumes:
   # Your precious state (auth, sessions, history). Marked external so its lifecycle
   # is independent of this compose project: predictable name (no project-dir prefix)
   # and NOT wiped by `docker compose down -v`. run.sh ensures it exists.
-  agentbox-home:
-    name: agentbox-home
+  piecove-home:
+    name: piecove-home
     external: true
   # Disposable DB data — compose manages this one (recreatable via db:prepare).
-  agentbox-pgdata:
-    name: agentbox-pgdata
+  piecove-pgdata:
+    name: piecove-pgdata

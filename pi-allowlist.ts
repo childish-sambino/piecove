@@ -1,4 +1,4 @@
-// agentbox · Pi permission gate
+// piecove · Pi permission gate
 //
 // Pi has no built-in allowlist, but its `tool_call` hook can block/approve a tool
 // before it runs. This reuses your Claude Code permissions (~/.claude/settings.json
@@ -64,15 +64,15 @@ export default function (pi: any) {
 
     const segs = segments(cmd);
     if (segs.some((s) => hits(s, rules.deny))) {
-      return { block: true, reason: "agentbox: command matches a denied pattern" };
+      return { block: true, reason: "piecove: command matches a denied pattern" };
     }
     if (segs.every((s) => hits(s, rules.allow))) return; // fully allowlisted
     if (approved.has(cmd)) return; // approved earlier this session
 
     if (!ctx.hasUI) {
-      return { block: true, reason: "agentbox: command not in allowlist (no UI to approve)" };
+      return { block: true, reason: "piecove: command not in allowlist (no UI to approve)" };
     }
-    const choice = await ctx.ui.select(`agentbox · not in allowlist:\n  ${cmd}`, [
+    const choice = await ctx.ui.select(`piecove · not in allowlist:\n  ${cmd}`, [
       "Allow once",
       "Allow for session",
       "Reject",
@@ -82,6 +82,6 @@ export default function (pi: any) {
       approved.add(cmd);
       return;
     }
-    return { block: true, reason: "agentbox: rejected by user" };
+    return { block: true, reason: "piecove: rejected by user" };
   });
 }

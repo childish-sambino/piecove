@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agentbox entrypoint: mirror the user's Claude config, wire the chosen provider
+# piecove entrypoint: mirror the user's Claude config, wire the chosen provider
 # for BOTH Claude Code and Pi from one set of vars, set up git/GitHub, then exec
 # the command (a shell by default).
 set -u
@@ -31,15 +31,15 @@ fi
 
 # ── Resolve the provider preset → base URL + model for both CLIs ───────────────
 PROVIDER="${PROVIDER:-fireworks}"
-KEY="${AGENTBOX_API_KEY:-}"
-A_BASE=""; PI_API="anthropic-messages"; PI_PROVIDER="agentbox"
+KEY="${PIECOVE_API_KEY:-}"
+A_BASE=""; PI_API="anthropic-messages"; PI_PROVIDER="piecove"
 case "$PROVIDER" in
   fireworks)  A_BASE="https://api.fireworks.ai/inference"; : "${MODEL:=accounts/fireworks/models/glm-5p2}" ;;
   zai)        A_BASE="https://api.z.ai/api/anthropic";     : "${MODEL:=glm-5.2}" ;;
   openrouter) A_BASE="https://openrouter.ai/api";          : "${MODEL:=z-ai/glm-5.2}" ;;
   anthropic)  PI_PROVIDER="anthropic";      : "${MODEL:=claude-opus-4-8}" ;;
   bedrock)    PI_PROVIDER="amazon-bedrock" ;;
-  *) echo "agentbox: unknown PROVIDER='$PROVIDER' (use fireworks|zai|openrouter|anthropic|bedrock)" >&2 ;;
+  *) echo "piecove: unknown PROVIDER='$PROVIDER' (use fireworks|zai|openrouter|anthropic|bedrock)" >&2 ;;
 esac
 MODEL="${MODEL:-}"
 
@@ -64,11 +64,11 @@ fi
 # written to disk in plaintext.
 mkdir -p "$HOME/.pi/agent/extensions"
 # Pi permission gate: enforce your Claude permissions.allow on Pi's bash tool.
-ln -sfn /opt/agentbox/pi-allowlist.ts "$HOME/.pi/agent/extensions/agentbox-allowlist.ts"
+ln -sfn /opt/piecove/pi-allowlist.ts "$HOME/.pi/agent/extensions/piecove-allowlist.ts"
 if [ -n "$A_BASE" ]; then
-  [ -n "$KEY" ] && export AGENTBOX_API_KEY="$KEY"
+  [ -n "$KEY" ] && export PIECOVE_API_KEY="$KEY"
   cat > "$HOME/.pi/agent/models.json" <<JSON
-{ "providers": { "agentbox": { "baseUrl": "$A_BASE", "api": "$PI_API", "apiKey": "\$AGENTBOX_API_KEY", "models": [ { "id": "$MODEL", "name": "agentbox ($PROVIDER)" } ] } } }
+{ "providers": { "piecove": { "baseUrl": "$A_BASE", "api": "$PI_API", "apiKey": "\$PIECOVE_API_KEY", "models": [ { "id": "$MODEL", "name": "piecove ($PROVIDER)" } ] } } }
 JSON
 fi
 if [ -n "$MODEL" ]; then
@@ -99,14 +99,14 @@ fi
 
 # ── interactive-shell niceties (the default command is bash) ──────────────────
 BASHRC="$HOME/.bashrc"
-sed -i '/# >>> agentbox >>>/,/# <<< agentbox <<</d' "$BASHRC" 2>/dev/null || true
+sed -i '/# >>> piecove >>>/,/# <<< piecove <<</d' "$BASHRC" 2>/dev/null || true
 cat >> "$BASHRC" <<RC
-# >>> agentbox >>>
+# >>> piecove >>>
 $PI_ALIAS
 $CLAUDE_SUB_ALIAS
-echo "agentbox · provider=$PROVIDER model=${MODEL:-<none>} · run 'claude' or 'pi' (cwd: \$PWD)"
+echo "piecove · provider=$PROVIDER model=${MODEL:-<none>} · run 'claude' or 'pi' (cwd: \$PWD)"
 echo "          'claude-sub' = Claude Code on your Anthropic subscription (/login once)"
-# <<< agentbox <<<
+# <<< piecove <<<
 RC
 
 exec "$@"
