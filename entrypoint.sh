@@ -85,10 +85,15 @@ CLAUDE_SUB_ALIAS="alias claude-sub='env -u ANTHROPIC_BASE_URL -u ANTHROPIC_AUTH_
 # ── git identity + GitHub auth (HTTPS via GH_TOKEN) ───────────────────────────
 [ -n "${GIT_USER_NAME:-}" ]  && git config --global user.name  "$GIT_USER_NAME"
 [ -n "${GIT_USER_EMAIL:-}" ] && git config --global user.email "$GIT_USER_EMAIL"
+# Idempotent: ~/.gitconfig persists in the home volume, so clear multi-valued keys
+# before re-adding (a plain `git config` set errors on an already-multi-valued key).
+git config --global --unset-all safe.directory 2>/dev/null || true
 git config --global --add safe.directory '*'
 if [ -n "${GH_TOKEN:-}" ]; then
+  git config --global --unset-all credential."https://github.com".helper 2>/dev/null || true
   gh auth setup-git 2>/dev/null || true
-  git config --global url."https://github.com/".insteadOf "git@github.com:"
+  git config --global --unset-all url."https://github.com/".insteadOf 2>/dev/null || true
+  git config --global --add url."https://github.com/".insteadOf "git@github.com:"
   git config --global --add url."https://github.com/".insteadOf "ssh://git@github.com/"
 fi
 
