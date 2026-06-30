@@ -75,6 +75,8 @@ RUN useradd --create-home --shell /bin/bash ${USERNAME}
 # Pi permission-gate extension — reads your Claude permissions.allow so Pi enforces
 # the same allowlist (gates the bash tool's CLI/network calls). See pi-allowlist.ts.
 COPY pi-allowlist.ts /opt/piecove/pi-allowlist.ts
+# Pi voice-notification extension — maps Pi lifecycle events to claude-notify.sh.
+COPY pi-notify.ts /opt/piecove/pi-notify.ts
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

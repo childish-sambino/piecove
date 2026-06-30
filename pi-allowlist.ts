@@ -17,7 +17,20 @@
 // so `git status && curl evil.com` still prompts even though `git status` is safe.
 // The prompt names the offending segment so you can see exactly what tripped it.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+
+// Speak the "permission" cue (Daniel the butler) when a gate prompt appears, via
+// the same claude-notify.sh Claude Code uses. Fire-and-forget; never throws.
+const NOTIFY = `${process.env.HOME}/.claude/hooks/claude-notify.sh`;
+function speakPermission(): void {
+  if (!existsSync(NOTIFY)) return;
+  try {
+    spawnSync("bash", [NOTIFY, "permission"], { stdio: "ignore", timeout: 5000 });
+  } catch {
+    /* a missing voice or audio bridge must never break the gate */
+  }
+}
 
 function escapeRe(s: string): string {
   return s.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
@@ -117,7 +130,9 @@ export default function (pi: any) {
     if (!ctx.hasUI) {
       return { block: true, reason: `piecove: not in allowlist — ${bad}` };
     }
-    // Show the offending part (and the full command too, if it's a compound).
+    // Speak the "permission" cue, then show the offending part (and the full
+    // command too, if it's a compound).
+    speakPermission();
     const title =
       bad === cmd
         ? `piecove · not allowed:\n  ${bad}`

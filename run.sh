@@ -72,13 +72,16 @@ if [ "$WANT_DB" = "auto" ]; then
   fi
 fi
 
-# Stage the user's own ~/.claude config (CLAUDE.md, skills, settings) for mirroring.
-# -L resolves symlinks so it works whether they're real files or links to a dotfiles repo.
+# Stage the user's own ~/.claude config (CLAUDE.md, skills, settings, hooks) for
+# mirroring. -L resolves symlinks so it works whether they're real files or links
+# to a dotfiles repo. `hooks/` carries claude-notify.sh (the voice-notification
+# script); staging it lets both Claude Code and Pi speak from one source.
 STAGE="./.agent-config"
 rm -rf "$STAGE"; mkdir -p "$STAGE" .auth
 [ -e "$HOME/.claude/CLAUDE.md" ]     && cp -RL "$HOME/.claude/CLAUDE.md"     "$STAGE/CLAUDE.md"     2>/dev/null || true
 [ -e "$HOME/.claude/skills" ]        && cp -RL "$HOME/.claude/skills"        "$STAGE/skills"        2>/dev/null || true
 [ -e "$HOME/.claude/settings.json" ] && cp -RL "$HOME/.claude/settings.json" "$STAGE/settings.json" 2>/dev/null || true
+[ -e "$HOME/.claude/hooks" ]         && cp -RL "$HOME/.claude/hooks"         "$STAGE/hooks"         2>/dev/null || true
 
 # git identity from the host (so commits are attributed correctly, no config needed)
 export GIT_USER_NAME="$(git config --global user.name  || true)"

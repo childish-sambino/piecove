@@ -12,6 +12,10 @@ mkdir -p "$CLAUDE_DIR"
 if [ -d "$STAGE" ]; then
   [ -e "$STAGE/CLAUDE.md" ] && ln -sfn "$STAGE/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"
   [ -e "$STAGE/skills" ]    && ln -sfn "$STAGE/skills"    "$CLAUDE_DIR/skills"
+  # claude-notify.sh (voice notifications). settings.json references it via
+  # ~/.claude/hooks/, so the symlink makes Claude Code's hooks resolve in here —
+  # and Pi's notify extension shells out to the same path.
+  [ -e "$STAGE/hooks" ]     && ln -sfn "$STAGE/hooks"     "$CLAUDE_DIR/hooks"
   if [ -f "$STAGE/settings.json" ]; then
     # Copy (not symlink) so Claude Code can write state; preserve the chosen theme
     # across the refresh so you aren't re-prompted, and auto-approve project MCP.
@@ -45,6 +49,10 @@ MODEL="${MODEL:-}"
 
 # Claude Code wiring
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+# Make claude-notify.sh block until its forwarded utterance is written, rather
+# than backgrounding it — a fire-and-forget bg job gets reaped before it lands in
+# the say queue here. Instant anyway, since `say`/`afplay` are forwarding stubs.
+export CLAUDE_NOTIFY_WAIT=1
 if [ "$PROVIDER" = "anthropic" ]; then
   [ -n "$KEY" ]   && export ANTHROPIC_API_KEY="$KEY"
   [ -n "$MODEL" ] && export ANTHROPIC_MODEL="$MODEL"
@@ -65,6 +73,8 @@ fi
 mkdir -p "$HOME/.pi/agent/extensions"
 # Pi permission gate: enforce your Claude permissions.allow on Pi's bash tool.
 ln -sfn /opt/piecove/pi-allowlist.ts "$HOME/.pi/agent/extensions/piecove-allowlist.ts"
+# Pi voice notifications: map Pi lifecycle events to the same claude-notify.sh.
+ln -sfn /opt/piecove/pi-notify.ts "$HOME/.pi/agent/extensions/piecove-notify.ts"
 if [ -n "$A_BASE" ]; then
   [ -n "$KEY" ] && export PIECOVE_API_KEY="$KEY"
   cat > "$HOME/.pi/agent/models.json" <<JSON
