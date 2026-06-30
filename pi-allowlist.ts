@@ -8,11 +8,13 @@
 // this gates the outward stuff the sandbox doesn't.
 //
 // Behaviour (mirrors Claude Code's default mode):
-//   - every segment of a command matches an allow pattern  → run silently
-//   - any segment matches a deny pattern                    → blocked
-//   - otherwise                                             → prompt (or block if headless)
-// Compound commands are split on && || ; | and newlines; ALL parts must be allowed,
-// so `git status && curl evil.com` still prompts even though `git*` is allowed.
+//   - any segment matches a deny pattern                              → blocked
+//   - every segment is a safe built-in OR matches an allow pattern    → run silently
+//   - otherwise                                                       → prompt (block if headless)
+// The "safe floor" (local read/nav commands like cat, head, rg, git status) means
+// benign reads don't prompt — only network/outward/unknown commands do. Compound
+// commands are split on && || ; | and newlines; ALL parts must pass, so
+// `git status && curl evil.com` still prompts even though `git status` is safe.
 
 import { readFileSync } from "node:fs";
 
@@ -51,6 +53,32 @@ function segments(cmd: string): string[] {
     .filter(Boolean);
 }
 
+// Safe "floor": local read/navigation/inspection commands that never need approval
+// (no network, no command-runners). Mirrors Claude Code auto-approving safe reads.
+const SAFE = new Set([
+  "ls", "pwd", "cd", "cat", "head", "tail", "less", "more", "file", "stat", "tree",
+  "wc", "which", "type", "basename", "dirname", "realpath", "readlink", "echo",
+  "printf", "true", "false", "date", "printenv", "uname", "whoami", "id", "hostname",
+  "du", "df", "grep", "egrep", "fgrep", "rg", "ag", "sed", "awk", "cut", "sort",
+  "uniq", "tr", "jq", "yq", "column", "diff", "comm", "find", "fd", "bat", "eza",
+  "sleep", "tldr", "man", "history", "clear",
+]);
+// git read-only subcommands (push/fetch/pull/clone/commit/etc. still go through rules).
+const GIT_SAFE = new Set([
+  "status", "diff", "log", "show", "branch", "remote", "rev-parse", "ls-files",
+  "ls-tree", "blame", "describe", "shortlog", "cat-file", "for-each-ref",
+  "symbolic-ref", "whatchanged",
+]);
+function isSafe(seg: string): boolean {
+  const parts = seg.split(/\s+/);
+  let i = 0;
+  while (i < parts.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(parts[i])) i++; // skip VAR=val prefixes
+  const cmd = (parts[i] || "").replace(/^.*\//, ""); // basename (handles /usr/bin/cat)
+  if (!cmd) return false;
+  if (cmd === "git") return GIT_SAFE.has(parts[i + 1]);
+  return SAFE.has(cmd);
+}
+
 export default function (pi: any) {
   const rules = loadRules();
   const approved = new Set<string>(); // session "allow always" cache
@@ -66,7 +94,7 @@ export default function (pi: any) {
     if (segs.some((s) => hits(s, rules.deny))) {
       return { block: true, reason: "piecove: command matches a denied pattern" };
     }
-    if (segs.every((s) => hits(s, rules.allow))) return; // fully allowlisted
+    if (segs.every((s) => isSafe(s) || hits(s, rules.allow))) return; // safe floor or allowlisted
     if (approved.has(cmd)) return; // approved earlier this session
 
     if (!ctx.hasUI) {
