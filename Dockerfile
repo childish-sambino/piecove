@@ -38,6 +38,17 @@ RUN arch="$(dpkg --print-architecture)"; case "$arch" in arm64) a=arm64 ;; amd64
     curl -fsSL -o /usr/local/bin/sentry "https://github.com/getsentry/cli/releases/latest/download/sentry-linux-$a" \
  && chmod +x /usr/local/bin/sentry
 
+# Service CLIs:
+#   linear  — @schpet/linear-cli (npm, community/agent-friendly)
+#   heroku  — official Heroku CLI (npm)
+#   bs      — Better Stack CLI (sounak98/betterstack-cli, community) release binary, arch-aware
+RUN npm install -g @schpet/linear-cli heroku
+RUN arch="$(dpkg --print-architecture)"; case "$arch" in arm64) t=aarch64-unknown-linux-gnu ;; amd64) t=x86_64-unknown-linux-gnu ;; *) t="" ;; esac; \
+    curl -fsSL "https://github.com/sounak98/betterstack-cli/releases/latest/download/bs-$t.tar.gz" -o /tmp/bs.tgz \
+ && tar -xzf /tmp/bs.tgz -C /tmp \
+ && mv "$(find /tmp -name bs -type f | head -1)" /usr/local/bin/bs \
+ && chmod +x /usr/local/bin/bs && rm -rf /tmp/bs.tgz
+
 # Stub the macOS/mise commands a user's notify hooks may shell out to, so those
 # hooks no-op on Linux instead of erroring. `say` is handled separately (forwarded
 # to the Mac). `source` is shimmed because Claude Code runs hooks under dash.

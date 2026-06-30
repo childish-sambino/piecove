@@ -30,6 +30,9 @@ cp .env.example .env          # set PROVIDER + MODEL + AGENTBOX_API_KEY
 | Pi | `pi` | badlogic/earendil's minimal agent CLI |
 | GitHub CLI | `gh` | commit/push, clone private repos (token auth) |
 | Sentry CLI | `sentry` | the new agent-focused CLI (`sentry issue explain …`) |
+| Linear CLI | `linear` | issues/cycles/PRs from the shell (community, agent-friendly) |
+| Heroku CLI | `heroku` | official |
+| Better Stack | `bs` | logs/monitors/incidents, `-o json` everywhere (community) |
 | Toolchains | `ruby` `node` `python3` | Ruby auto-detected per repo; Node 22 + Python 3.11 |
 
 Plus `git`, `ripgrep`, `psql`, and native-build libs so most gems/wheels compile.
