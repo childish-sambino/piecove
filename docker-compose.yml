@@ -29,6 +29,9 @@ services:
       - ./.agent-config:/agent-config:ro
       # OAuth-URL / voice-notification handoff to ./host-bridge on your Mac.
       - ./.auth:/auth
+      # Persist installed gems (GEM_HOME) so `bundle install` runs once, not every
+      # launch. Seeded from the image on first use; survives across runs.
+      - piecove-bundle:/usr/local/bundle
 
   # Optional Postgres for running a repo's specs. Off by default; start with --db.
   db:
@@ -58,3 +61,6 @@ volumes:
   # Disposable DB data — compose manages this one (recreatable via db:prepare).
   piecove-pgdata:
     name: piecove-pgdata
+  # Gem cache (recreatable via bundle install); compose-managed.
+  piecove-bundle:
+    name: piecove-bundle
