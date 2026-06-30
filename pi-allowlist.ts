@@ -13,8 +13,9 @@
 //   - otherwise                                                       → prompt (block if headless)
 // The "safe floor" (local read/nav commands like cat, head, rg, git status) means
 // benign reads don't prompt — only network/outward/unknown commands do. Compound
-// commands are split on && || ; | and newlines; ALL parts must pass, so
-// `git status && curl evil.com` still prompts even though `git status` is safe.
+// commands are split (quote-aware) on && || ; | and newlines; ALL parts must pass,
+// so `git status && curl evil.com` still prompts even though `git status` is safe.
+// The prompt names the offending segment so you can see exactly what tripped it.
 
 import { readFileSync } from "node:fs";
 
@@ -46,11 +47,24 @@ function loadRules() {
   return { allow: compile(bashPatterns(perms.allow)), deny: compile(bashPatterns(perms.deny)) };
 }
 
+// Split a command on unquoted ; | || && and newlines. Quote-aware so operators
+// inside quoted args/regex (e.g. rg "whats_slipping|family_change") aren't split.
 function segments(cmd: string): string[] {
-  return cmd
-    .split(/\|\||&&|[;|\n]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const out: string[] = [];
+  let cur = "";
+  let q: string | null = null;
+  for (let i = 0; i < cmd.length; i++) {
+    const c = cmd[i];
+    if (q) { cur += c; if (c === q) q = null; continue; }
+    if (c === '"' || c === "'") { q = c; cur += c; continue; }
+    if (c === "\n" || c === ";") { out.push(cur); cur = ""; continue; }
+    if (c === "&" && cmd[i + 1] === "&") { out.push(cur); cur = ""; i++; continue; }
+    if (c === "|" && cmd[i + 1] === "|") { out.push(cur); cur = ""; i++; continue; }
+    if (c === "|") { out.push(cur); cur = ""; continue; }
+    cur += c;
+  }
+  out.push(cur);
+  return out.map((s) => s.trim()).filter(Boolean);
 }
 
 // Safe "floor": local read/navigation/inspection commands that never need approval
@@ -91,16 +105,24 @@ export default function (pi: any) {
     if (rules.allow.length === 0 && rules.deny.length === 0) return; // no allowlist configured → don't gate
 
     const segs = segments(cmd);
-    if (segs.some((s) => hits(s, rules.deny))) {
-      return { block: true, reason: "piecove: command matches a denied pattern" };
+    const denied = segs.find((s) => hits(s, rules.deny));
+    if (denied) {
+      return { block: true, reason: `piecove: denied — ${denied}` };
     }
-    if (segs.every((s) => isSafe(s) || hits(s, rules.allow))) return; // safe floor or allowlisted
+    // The first segment that isn't safe or allowlisted is what triggers the gate.
+    const bad = segs.find((s) => !(isSafe(s) || hits(s, rules.allow)));
+    if (!bad) return; // every segment is safe or allowlisted
     if (approved.has(cmd)) return; // approved earlier this session
 
     if (!ctx.hasUI) {
-      return { block: true, reason: "piecove: command not in allowlist (no UI to approve)" };
+      return { block: true, reason: `piecove: not in allowlist — ${bad}` };
     }
-    const choice = await ctx.ui.select(`piecove · not in allowlist:\n  ${cmd}`, [
+    // Show the offending part (and the full command too, if it's a compound).
+    const title =
+      bad === cmd
+        ? `piecove · not allowed:\n  ${bad}`
+        : `piecove · not allowed:\n  ${bad}\n  (full: ${cmd})`;
+    const choice = await ctx.ui.select(title, [
       "Allow once",
       "Allow for session",
       "Reject",
