@@ -1,0 +1,60 @@
+services:
+  agentbox:
+    build:
+      context: .
+      args:
+        # Auto-detected from the working dir by run.sh; falls back to this.
+        RUBY_VERSION: ${RUBY_VERSION:-3.4.1}
+    image: agentbox
+    env_file: .env
+    init: true
+    stdin_open: true
+    tty: true
+    # Host networking so MCP OAuth callbacks (random loopback ports) reach the
+    # container, and so a Postgres on your Mac's localhost is reachable. Tradeoff:
+    # shares your Mac's network (no network isolation); filesystem isolation stays.
+    network_mode: "host"
+    working_dir: /workspace
+    environment:
+      # git identity from the host (run.sh fills these from your global git config)
+      GIT_USER_NAME: ${GIT_USER_NAME:-}
+      GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
+    volumes:
+      # The repo/working dir the agent operates on (run.sh sets WORKSPACE_DIR).
+      - ${WORKSPACE_DIR:-./workspace}:/workspace
+      # Persist the agent user's home — all tool state in one volume: Claude Code
+      # (auth, theme, sessions), Pi, Sentry CLI login, shell history, etc.
+      - agentbox-home:/home/agent
+      # Your ~/.claude bits (CLAUDE.md, skills, settings), staged read-only by run.sh.
+      - ./.agent-config:/agent-config:ro
+      # OAuth-URL / voice-notification handoff to ./host-bridge on your Mac.
+      - ./.auth:/auth
+
+  # Optional Postgres for running a repo's specs. Off by default; start with --db.
+  db:
+    profiles: ["db"]
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${PGUSER:-postgres}
+      POSTGRES_PASSWORD: ${PGPASSWORD:-postgres}
+      POSTGRES_DB: postgres
+    ports:
+      - "${PGPORT:-5432}:5432"
+    volumes:
+      - agentbox-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-postgres}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  # Your precious state (auth, sessions, history). Marked external so its lifecycle
+  # is independent of this compose project: predictable name (no project-dir prefix)
+  # and NOT wiped by `docker compose down -v`. run.sh ensures it exists.
+  agentbox-home:
+    name: agentbox-home
+    external: true
+  # Disposable DB data — compose manages this one (recreatable via db:prepare).
+  agentbox-pgdata:
+    name: agentbox-pgdata
