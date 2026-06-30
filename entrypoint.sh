@@ -99,6 +99,7 @@ fi
 
 # ── interactive-shell niceties (the default command is bash) ──────────────────
 BASHRC="$HOME/.bashrc"
+# Strip our managed block before re-adding (idempotent).
 sed -i '/# >>> piecove >>>/,/# <<< piecove <<</d' "$BASHRC" 2>/dev/null || true
 cat >> "$BASHRC" <<RC
 # >>> piecove >>>
