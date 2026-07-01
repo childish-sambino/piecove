@@ -9,7 +9,9 @@
 //                        session's running total is snapshotted, so /resume picks
 //                        up the same spend + baseline instead of restarting at $0.
 //   #5 Cache meter     — track cache-read vs fresh-input tokens = your hit rate.
-//   #6 Budget guard    — warn (and optionally hard-stop) at a $ cap per session.
+//   #6 Budget guard    — warn at 80%, then on breach STOP the session (confirm to
+//                        stop or raise the cap; headless hard-stops). Stopping is
+//                        resumable — /resume continues with the spend rehydrated.
 //   #3 Router          — classify each prompt (trivial/standard/hard) and, when
 //                        tier→model routes are configured, send it to the right
 //                        model; otherwise run advisory and show what routing WOULD save.
@@ -105,6 +107,7 @@ const state = {
   turnTier: "standard" as Tier,
   budget: parseFloat(process.env.PIECOVE_BUDGET || "") || null,
   warned: { soft: false, hard: false },
+  stopped: false, // set once we've stopped the session on a budget breach
   consecErrors: 0,
   escalatedThisTurn: false,
   ledgerDir: `${process.env.HOME}/.pi/agent/piecove-cost`,
@@ -240,6 +243,7 @@ function snapshot() {
     routedCost: state.routedCost,
     routes: state.routes,
     warned: state.warned,
+    budget: state.budget, // persist in-session budget raises so /resume respects them
     models: [...state.models.entries()].map(([id, m]) => ({ id, ...m })),
   };
 }
@@ -257,6 +261,8 @@ function resetAggregates(): void {
   state.routedCost = 0;
   state.routes = { local: 0, standard: 0, frontier: 0 };
   state.warned = { soft: false, hard: false };
+  state.stopped = false; // re-arm the budget guard for the (possibly resumed) session
+  state.budget = parseFloat(process.env.PIECOVE_BUDGET || "") || null;
 }
 function loadSnapshotByKey(key: string | null): boolean {
   if (!key) return false;
@@ -268,9 +274,38 @@ function loadSnapshotByKey(key: string | null): boolean {
     state.routedCost = Number(s.routedCost) || 0;
     state.routes = { local: 0, standard: 0, frontier: 0, ...(s.routes || {}) };
     state.warned = { soft: false, hard: false, ...(s.warned || {}) };
+    if (typeof s.budget === "number") state.budget = s.budget; // honor an in-session raise
     state.models = new Map((s.models || []).map((m: any) => [m.id, { label: m.label, usage: m.usage, cost: m.cost, calls: m.calls }]));
     return true;
   } catch { return false; }
+}
+
+// Budget breach → let the user stop (session is saved, resume later) or raise the
+// cap. Interactive: confirm. Headless: hard-stop so a runaway can't quietly burn
+// through the budget. Pairs with resume: /resume rehydrates spend + the raised cap.
+async function enforceBudget(ctx: any, spend: number): Promise<void> {
+  if (!state.budget) return;
+  const over = `${usd(spend)} / ${usd(state.budget)}`;
+  if (ctx?.hasUI && ctx?.ui?.select) {
+    const STOP = "Stop the session (resume later)";
+    const RAISE = "Raise the budget and keep going";
+    const choice = await ctx.ui.select(`piecove: budget reached — ${over}`, [STOP, RAISE]);
+    if (choice === RAISE) {
+      const bump = parseFloat(process.env.PIECOVE_BUDGET || "") || state.budget; // one more budget's worth
+      state.budget = state.budget + bump;
+      state.warned = { soft: false, hard: false };
+      persistSnapshot();
+      ctx.ui.notify(`piecove: budget raised to ${usd(state.budget)} — carry on`, "info");
+      return;
+    }
+  }
+  // Stop: mark it, persist, halt this turn, and request a graceful quit. The session
+  // file is saved, so `pi` then /resume continues here with the cost lab rehydrated.
+  state.stopped = true;
+  persistSnapshot();
+  ctx?.ui?.notify?.(`piecove: budget reached (${over}) — stopping. Resume later with /resume; cost carries over.`, "error");
+  try { ctx?.abort?.(); } catch { /* ignore */ }    // halt the current turn's model calls
+  try { ctx?.shutdown?.(); } catch { /* ignore */ }  // graceful quit once idle (session saved)
 }
 
 // ── extension ─────────────────────────────────────────────────────────────────
@@ -334,12 +369,11 @@ export default function (pi: any) {
     persist({ ts: Date.now(), session: state.session, model, tier: state.turnTier, usage, cost });
     updateStatus(ctx); // refresh the always-on footer
 
-    // Budget guard
-    if (state.budget) {
+    // Budget guard: warn at 80%, then STOP the session on breach (resumable).
+    if (state.budget && !state.stopped) {
       const spend = totalCost();
-      if (!state.warned.hard && spend >= state.budget) {
-        state.warned.hard = true;
-        ctx?.ui?.notify?.(`piecove: over budget — ${usd(spend)} / ${usd(state.budget)}. Consider /cost, a cheaper model, or wrapping up.`, "error");
+      if (spend >= state.budget) {
+        await enforceBudget(ctx, spend);
       } else if (!state.warned.soft && spend >= 0.8 * state.budget) {
         state.warned.soft = true;
         ctx?.ui?.notify?.(`piecove: 80% of budget — ${usd(spend)} / ${usd(state.budget)}`, "warning");
@@ -378,4 +412,4 @@ export default function (pi: any) {
 }
 
 // Exposed for unit tests / the benchmark harness.
-export const _internal = { classify, priceFor, baselinePrice, cheapPrice, costOf, readUsage, dashboard, statusLine, snapshot, persistSnapshot, loadSnapshotByKey, resetAggregates, keyFor, state, PRICING };
+export const _internal = { classify, priceFor, baselinePrice, cheapPrice, costOf, readUsage, dashboard, statusLine, snapshot, persistSnapshot, loadSnapshotByKey, resetAggregates, keyFor, enforceBudget, state, PRICING };

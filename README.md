@@ -208,8 +208,10 @@ What each part is doing:
 - **Cache-hit meter** — cached tokens read at ~0.1× price, so the hit-rate is a direct dial on
   cost. A falling hit-rate means something is busting the prompt cache (caching is
   Anthropic-flavored; open providers may ignore it and bill full input every turn).
-- **Budget guard** — set `PIECOVE_BUDGET=5` (dollars); the bar fills as you spend, warns at 80%,
-  and again when you cross it, so a runaway loop can't quietly rack up a bill.
+- **Budget guard** — set `PIECOVE_BUDGET=5` (dollars); the bar fills as you spend and warns at
+  80%. On breach it **stops the session**: interactive Pi asks whether to stop (resume later with
+  `/resume` — spend and baseline carry over) or raise the cap and keep going; headless hard-stops
+  so a runaway loop can't quietly burn the budget.
 - **Router + classifier** — each prompt is classified `local` / `standard` / `frontier` from its
   wording (a refactor or race-condition hunt → frontier; a rename or typo → local). By default
   this is **advisory** — it shows what tier-routing *would* save without changing your model. To
