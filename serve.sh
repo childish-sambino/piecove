@@ -14,10 +14,19 @@
 set -u
 cd /workspace || exit 1
 LOG=/tmp/piecove-serve.log
+# Idempotent: take down any previous stack (ours is its own setsid group) so a
+# restart can't double-run Sidekiq/watchers alongside orphans of a failed boot.
+OLD_PID="$(cat /tmp/piecove-serve.pid 2>/dev/null)"
+[ -n "$OLD_PID" ] && [ "$OLD_PID" != "$$" ] && kill -- -"$OLD_PID" 2>/dev/null
 echo $$ > /tmp/piecove-serve.pid
 exec >> "$LOG" 2>&1
 
 echo "── piecove-serve start (port ${PORT:-3000}) ──"
+
+# A pidfile left in the bind-mounted repo by a previous container makes Puma
+# refuse to boot ("A server is already running") — the pid is from a dead
+# container's namespace. Nothing is running in THIS fresh container; clear it.
+rm -f tmp/pids/server.pid
 
 # Bootstrap only what's missing, so warm starts go straight to the processes.
 if [ -f Gemfile ] && ! bundle check >/dev/null 2>&1; then
