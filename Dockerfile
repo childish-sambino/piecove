@@ -38,6 +38,9 @@ RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent
 # the Pi MCP adapter + your mirrored .mcp.json, so no per-service CLI is baked in.
 RUN npm install -g heroku
 
+# yarn/pnpm via corepack, for served apps whose lockfile picks them.
+RUN npm install -g corepack && corepack enable
+
 # Stub the macOS/mise commands a user's notify hooks may shell out to, so those
 # hooks no-op on Linux instead of erroring. `say` is handled separately (forwarded
 # to the Mac). `source` is shimmed because Claude Code runs hooks under dash.
@@ -69,6 +72,11 @@ COPY pi-notify.ts /opt/piecove/pi-notify.ts
 # Pi cost-lab extension + the cross-provider price table it meters against.
 COPY pi-costlab.ts /opt/piecove/pi-costlab.ts
 COPY pricing.json /opt/piecove/pricing.json
+
+# Rails dev-stack launcher — bootstraps and runs the mounted app's bin/dev/Procfile
+# processes (auto-launched by the entrypoint when the workspace is a Rails app).
+COPY serve.sh /usr/local/bin/piecove-serve
+RUN chmod +x /usr/local/bin/piecove-serve
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

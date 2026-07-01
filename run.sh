@@ -5,10 +5,12 @@
 #   path/to/piecove/run.sh .                     # shell in the current dir
 #   path/to/piecove/run.sh ~/code/myrepo --db    # force-start Postgres
 #   path/to/piecove/run.sh ~/code/myrepo --no-db # skip Postgres even if detected
+#   path/to/piecove/run.sh ~/code/myrepo --no-serve # don't auto-boot a Rails app
 #   path/to/piecove/run.sh ~/code/myrepo claude  # run a command instead of a shell
 #
 # Postgres auto-starts when the repo uses it (a `pg` gem / postgresql database.yml);
-# --db / --no-db force it on or off.
+# --db / --no-db force it on or off. A Rails app auto-serves (bin/dev + Sidekiq +
+# Redis, bootstrapped in the background); --serve / --no-serve force it on or off.
 set -euo pipefail
 
 # Parse args BEFORE cd-ing into the script's dir, so a relative path like `.`
@@ -16,11 +18,14 @@ set -euo pipefail
 # anything else is the command to run (default: shell).
 WORKSPACE_DIR=""
 WANT_DB=auto
+WANT_SERVE=auto
 CMD=()
 for a in "$@"; do
   case "$a" in
     --db) WANT_DB=1 ;;
     --no-db) WANT_DB=0 ;;
+    --serve) WANT_SERVE=1 ;;
+    --no-serve) WANT_SERVE=0 ;;
     *)
       if [ -z "$WORKSPACE_DIR" ] && [ -d "$a" ]; then
         WORKSPACE_DIR="$(cd "$a" && pwd)"
@@ -72,6 +77,26 @@ if [ "$WANT_DB" = "auto" ]; then
   fi
 fi
 
+# Auto-serve a Rails app: bootstrap + run its dev stack in the background so the
+# app is fully up (web, JS, Sidekiq, Redis) with zero config in the repo itself.
+is_rails() { [ -f "$1/config/application.rb" ] && [ -f "$1/Gemfile" ]; }
+needs_redis() {
+  local d="$1"
+  grep -qE "^[[:space:]]*gem [\"'](sidekiq|redis|resque)[\"']" "$d/Gemfile" 2>/dev/null && return 0
+  grep -qsE "adapter:[[:space:]]*redis" "$d/config/cable.yml" && return 0
+  return 1
+}
+if [ "$WANT_SERVE" = "auto" ]; then
+  if is_rails "$WORKSPACE_DIR"; then
+    WANT_SERVE=1; echo "piecove: Rails app detected → auto-serving its dev stack (use --no-serve to skip)"
+  else
+    WANT_SERVE=0
+  fi
+fi
+export PIECOVE_SERVE="$WANT_SERVE"
+WANT_REDIS=0
+if [ "$WANT_SERVE" = "1" ] && needs_redis "$WORKSPACE_DIR"; then WANT_REDIS=1; fi
+
 # Stage the user's own ~/.claude config (CLAUDE.md, skills, settings, hooks) for
 # mirroring. -L resolves symlinks so it works whether they're real files or links
 # to a dotfiles repo. `hooks/` carries claude-notify.sh (the voice-notification
@@ -98,6 +123,10 @@ compose build
 if [ "$WANT_DB" = "1" ]; then
   echo "piecove: starting Postgres (--db)…"
   compose --profile db up -d db
+fi
+if [ "$WANT_REDIS" = "1" ]; then
+  echo "piecove: starting Redis (app uses sidekiq/redis)…"
+  compose --profile redis up -d redis
 fi
 echo "piecove: working on $WORKSPACE_DIR"
 if [ "${#CMD[@]}" -gt 0 ]; then

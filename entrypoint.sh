@@ -126,6 +126,18 @@ else
   PI_ALIAS="# set MODEL to enable the pi alias; otherwise: pi --provider $PI_PROVIDER --model <id>$PI_PROJECT_FLAGS"
 fi
 
+# ── Rails dev stack: auto-serve the mounted app (run.sh --no-serve to skip) ────
+# piecove-serve bootstraps (bundle/JS deps/db:prepare) then runs the app's own
+# bin/dev / Procfile.dev processes, with Sidekiq gap-filled. setsid gives it its
+# own process group so `serve-stop` can kill the whole stack, detached from this
+# shell. It dies with the container — each run.sh gets a fresh stack.
+SERVE_BANNER=""
+if [ "${PIECOVE_SERVE:-}" = "1" ] && [ -f /workspace/config/application.rb ]; then
+  export REDIS_URL="${REDIS_URL:-redis://localhost:6379/0}"
+  setsid piecove-serve >/dev/null 2>&1 &
+  SERVE_BANNER="echo \"          rails: booting in background → http://localhost:3000  (serve-logs · serve-stop · serve-start)\""
+fi
+
 # `claude-sub` runs Claude Code on your Anthropic SUBSCRIPTION even when the env is
 # pointed at another provider — it strips the provider vars so Claude falls back to
 # your /login OAuth token (run `claude-sub` then /login once; it persists).
@@ -154,8 +166,12 @@ cat >> "$BASHRC" <<RC
 # >>> piecove >>>
 $PI_ALIAS
 $CLAUDE_SUB_ALIAS
+alias serve-logs='tail -f /tmp/piecove-serve.log'
+alias serve-stop='kill -- -\$(cat /tmp/piecove-serve.pid 2>/dev/null) 2>/dev/null && echo "piecove-serve stopped" || echo "piecove-serve not running"'
+alias serve-start='setsid piecove-serve >/dev/null 2>&1 & echo "piecove-serve started (serve-logs to watch)"'
 echo "piecove · provider=$PROVIDER model=${MODEL:-<none>} · run 'claude' or 'pi' (cwd: \$PWD)"
 echo "          'claude-sub' = Claude Code on your Anthropic subscription (/login once)"
+$SERVE_BANNER
 # <<< piecove <<<
 RC
 

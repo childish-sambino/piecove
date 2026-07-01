@@ -62,6 +62,7 @@ Then run it against a repo:
 ./run.sh .                         # shell in the current dir
 ./run.sh ~/code/your-repo --db     # force-start Postgres
 ./run.sh ~/code/your-repo --no-db  # skip Postgres even if detected
+./run.sh ~/code/your-repo --no-serve # don't auto-boot a detected Rails app
 ./run.sh ~/code/your-repo claude   # run a command instead of a shell
 ```
 
@@ -252,6 +253,8 @@ benchmark against work that looks like *yours*, not a toy.
 - **Ruby version** — from the working dir's `.ruby-version`, falling back to the Gemfile's
   `ruby` directive; the image builds that interpreter. Node 22 + Python 3.11 are baked in.
 - **Postgres** — auto-starts when the repo uses it (`pg` gem or postgresql `database.yml`).
+- **Rails app** — auto-serves the full dev stack (web, JS watchers, Sidekiq, Redis); see
+  [Rails dev stack](#rails-dev-stack-auto-serve).
 - **Git identity** — from your host `git config --global user.name`/`user.email`.
 - **Your Claude config** — `~/.claude/CLAUDE.md`, `skills/`, and `settings.json` are staged
   (symlinks resolved) and mirrored to *both* agents; project `.mcp.json` servers are
@@ -280,6 +283,35 @@ a Rails app connects with no config. Data persists in a volume. First run per re
 ```bash
 RAILS_ENV=test bin/rails db:prepare && bundle exec rspec
 ```
+
+## Rails dev stack (auto-serve)
+
+Point run.sh at a Rails repo and the whole dev stack comes up with **zero config in the repo
+itself** — web, JS/CSS watchers, Sidekiq, Redis, Postgres:
+
+- **Detection** — `config/application.rb` + a `Gemfile` marks it a Rails app (`--no-serve`
+  skips, `--serve` forces). Redis auto-starts when the Gemfile has sidekiq/redis or the cable
+  adapter is redis; Postgres via the existing `--db` detection.
+- **Bootstrap, then boot** — in the background, `piecove-serve` fills in whatever's missing
+  (`bundle install`, JS deps via npm/yarn/pnpm picked by lockfile, `bin/rails db:prepare`) and
+  then runs the app's **own** dev entry: `bin/dev`, else `foreman start -f Procfile.dev`, else
+  `bin/rails server`. Your Procfile is the source of truth — piecove only adds a `sidekiq`
+  process if the Gemfile wants it and the Procfile doesn't run it.
+- **On your Mac** — host networking means the app is just there: `http://localhost:3000` (and
+  the JS watcher's port) open directly.
+
+Your shell is usable immediately while it boots. From the shell:
+
+```bash
+serve-logs    # tail the bootstrap + app output
+serve-stop    # stop the whole stack (web, watchers, sidekiq)
+serve-start   # boot it again
+```
+
+The stack lives and dies with the container — each `run.sh` gets a fresh one (a second
+concurrent shell against the same app will lose the port race; run it with `--no-serve`).
+First boot pays for `bundle install`; the gem cache persists in a volume, so next launches
+skip straight to booting.
 
 ## Container ↔ Mac bridge (`host-bridge`)
 
@@ -335,7 +367,8 @@ commitment. Pick the provider that matches your sensitivity.
 run.sh              launcher: resolves the repo, auto-detects Ruby/Postgres, builds, runs
 Dockerfile          the image: toolchains + Claude Code + Pi + gh + heroku
 entrypoint.sh       wires the provider, mirrors config, sets up git/auth, drops to a shell
-docker-compose.yml  the piecove service (+ optional db) and volumes
+serve.sh            piecove-serve: bootstraps + runs a Rails app's dev stack in-container
+docker-compose.yml  the piecove service (+ optional db/redis) and volumes
 pi-allowlist.ts     Pi extension enforcing your Claude permissions.allow
 pi-costlab.ts       Pi extension: metering, budget guard, router, /cost dashboard
 pricing.json        cross-provider price table the cost lab meters against

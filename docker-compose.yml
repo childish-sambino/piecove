@@ -19,6 +19,8 @@ services:
       # git identity from the host (run.sh fills these from your global git config)
       GIT_USER_NAME: ${GIT_USER_NAME:-}
       GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
+      # 1 when run.sh detected a Rails app (or --serve) → entrypoint auto-serves it
+      PIECOVE_SERVE: ${PIECOVE_SERVE:-}
     volumes:
       # The repo/working dir the agent operates on (run.sh sets WORKSPACE_DIR).
       - ${WORKSPACE_DIR:-./workspace}:/workspace
@@ -32,6 +34,14 @@ services:
       # Persist installed gems (GEM_HOME) so `bundle install` runs once, not every
       # launch. Seeded from the image on first use; survives across runs.
       - piecove-bundle:/usr/local/bundle
+
+  # Optional Redis for Sidekiq / ActionCable / caching. Auto-started when a served
+  # Rails app needs it (sidekiq/redis in the Gemfile, redis cable adapter).
+  redis:
+    profiles: ["redis"]
+    image: redis:7
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
 
   # Optional Postgres for running a repo's specs. Off by default; start with --db.
   db:
