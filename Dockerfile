@@ -32,22 +32,11 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 RUN npm install -g @anthropic-ai/claude-code
 RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent
 
-# Sentry CLI — the new agent-focused `sentry` (getsentry/cli). Pull the latest
-# release binary for the image's arch (works on Apple Silicon and Intel hosts).
-RUN arch="$(dpkg --print-architecture)"; case "$arch" in arm64) a=arm64 ;; amd64) a=x64 ;; *) a="$arch" ;; esac; \
-    curl -fsSL -o /usr/local/bin/sentry "https://github.com/getsentry/cli/releases/latest/download/sentry-linux-$a" \
- && chmod +x /usr/local/bin/sentry
-
 # Service CLIs:
-#   linear  — @schpet/linear-cli (npm, community/agent-friendly)
 #   heroku  — official Heroku CLI (npm)
-#   bs      — Better Stack CLI (sounak98/betterstack-cli, community) release binary, arch-aware
-RUN npm install -g @schpet/linear-cli heroku
-RUN arch="$(dpkg --print-architecture)"; case "$arch" in arm64) t=aarch64-unknown-linux-gnu ;; amd64) t=x86_64-unknown-linux-gnu ;; *) t="" ;; esac; \
-    curl -fsSL "https://github.com/sounak98/betterstack-cli/releases/latest/download/bs-$t.tar.gz" -o /tmp/bs.tgz \
- && tar -xzf /tmp/bs.tgz -C /tmp \
- && mv "$(find /tmp -name bs -type f | head -1)" /usr/local/bin/bs \
- && chmod +x /usr/local/bin/bs && rm -rf /tmp/bs.tgz
+# Other services (Linear, Better Stack, etc.) are reached via MCP as needed — see
+# the Pi MCP adapter + your mirrored .mcp.json, so no per-service CLI is baked in.
+RUN npm install -g heroku
 
 # Stub the macOS/mise commands a user's notify hooks may shell out to, so those
 # hooks no-op on Linux instead of erroring. `say` is handled separately (forwarded
@@ -85,7 +74,7 @@ COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 USER ${USERNAME}
-RUN mkdir -p /home/${USERNAME}/.claude /home/${USERNAME}/.pi/agent /home/${USERNAME}/.sentry
+RUN mkdir -p /home/${USERNAME}/.claude /home/${USERNAME}/.pi/agent
 
 WORKDIR /workspace
 

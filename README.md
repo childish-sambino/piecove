@@ -29,11 +29,11 @@ cp .env.example .env          # set PROVIDER + MODEL + PIECOVE_API_KEY
 | Claude Code | `claude` | Anthropic's CLI, pointed at your configured provider |
 | Pi | `pi` | badlogic/earendil's minimal agent CLI |
 | GitHub CLI | `gh` | commit/push, clone private repos (token auth) |
-| Sentry CLI | `sentry` | the new agent-focused CLI (`sentry issue explain …`) |
-| Linear CLI | `linear` | issues/cycles/PRs from the shell (community, agent-friendly) |
 | Heroku CLI | `heroku` | official |
-| Better Stack | `bs` | logs/monitors/incidents, `-o json` everywhere (community) |
 | Toolchains | `ruby` `node` `python3` | Ruby auto-detected per repo; Node 22 + Python 3.11 |
+
+Other services (Linear, Better Stack, etc.) are reached through **MCP** rather than a bundled
+CLI — see [MCP](#mcp) below.
 
 Plus `git`, `ripgrep`, `psql`, and native-build libs so most gems/wheels compile.
 
@@ -123,6 +123,40 @@ The container is the filesystem sandbox, but the agent can still make outward ca
   commands are split on `&& || ; |`, so an allowed prefix can't smuggle in an unapproved call.
   Headless (no UI) → unmatched commands are blocked, fail-safe.
 
+## MCP
+
+Both agents can use MCP servers, so you reach Linear, Better Stack, a database, a browser, etc.
+as tools instead of bundling a CLI per service.
+
+- **Claude Code** has native MCP. Project `.mcp.json` servers are auto-approved (the entrypoint
+  sets `enableAllProjectMcpServers`).
+- **Pi** gets MCP through the bundled [pi-mcp-adapter](https://github.com/nicobailon/pi-mcp-adapter)
+  (installed into the home volume on first launch). Instead of loading every server's tool defs
+  upfront (~10k tokens each), it registers **one lazy `mcp()` proxy tool** (~200 tokens) that
+  discovers and calls tools on demand. Manage it in a Pi session with `/mcp`, `/mcp tools`,
+  `/mcp setup`.
+
+Both read the **same** `.mcp.json`, so declaring a server once serves both agents. Precedence
+(first match wins): `.pi/mcp.json` → `.mcp.json` (project) → `~/.pi/agent/mcp.json` (Pi global,
+persists in the home volume) → `~/.config/mcp/mcp.json` (user global).
+
+```json
+// .mcp.json in your repo (or ~/.pi/agent/mcp.json for every repo)
+{
+  "mcpServers": {
+    "playwright": { "command": "npx", "args": ["-y", "@playwright/mcp@latest"], "lifecycle": "lazy" },
+    "sentry":     { "url": "https://mcp.sentry.dev/mcp", "auth": "oauth" },
+    "linear":     { "url": "https://mcp.linear.app/mcp", "auth": "oauth" }
+  }
+}
+```
+
+> Heads-up on **claude.ai connectors** (Slack, Gmail, Drive, Calendar, …): those are
+> account-scoped connectors authenticated through your Claude login, not local `.mcp.json`
+> entries. Claude Code picks them up from your account (run `claude-sub` → `/login`); Pi does
+> **not** inherit them. To give Pi one of those, add it as an explicit `url` + `auth` server in
+> `.mcp.json` — it authenticates independently (OAuth opens via `host-bridge`).
+
 ## Cost lab
 
 The point of piecove is running a capable agent for a fraction of Claude's price. The cost lab
@@ -207,19 +241,6 @@ bash bench/run.sh z-ai/glm-5.2 anthropic/claude-opus-4.8 openai/gpt-5.5
 Add your own tasks to `tasks.json` (a prompt + a shell `verify` that exits 0 on success) to
 benchmark against work that looks like *yours*, not a toy.
 
-## Sentry CLI
-
-The `sentry` CLI is installed and its login persists across runs. It has a `--read-only` flag
-made for agents (read-only scopes; can't mutate Sentry):
-
-```bash
-sentry auth login --read-only          # OAuth (opens via host-bridge)
-#   or: sentry auth login --token <token> --read-only
-sentry issue list ; sentry issue explain <id>
-```
-
-This is separate from a Sentry MCP server (which has its own auth); both can coexist.
-
 ## What's auto-detected
 
 - **Ruby version** — from the working dir's `.ruby-version`, falling back to the Gemfile's
@@ -252,9 +273,9 @@ RAILS_ENV=test bin/rails db:prepare && bundle exec rspec
 The container can't open your browser or reach your speakers, so two things are handed to your
 Mac via `./.auth`, and `host-bridge.sh` (run on your Mac) handles them:
 
-- **OAuth URLs** — MCP/agent/`gh`/`sentry` logins write the URL to a file; `host-bridge` opens
-  it in your real browser (no clicking line-wrapped links). The callback reaches the container
-  via host networking.
+- **OAuth URLs** — MCP/agent/`gh` logins write the URL to a file; `host-bridge` opens it in your
+  real browser (no clicking line-wrapped links). The callback reaches the container via host
+  networking.
 - **Voice notifications** — TTS hooks' `say` calls are forwarded; `host-bridge --watch` plays
   them through your Mac's real `say`.
 
@@ -268,7 +289,7 @@ Mac via `./.auth`, and `host-bridge.sh` (run on your Mac) handles them:
 Two named volumes (one per state lifecycle):
 
 - **`piecove-home`** (external) — all your agent state in one place: Claude Code auth/sessions,
-  Pi auth, Sentry login, shell history. Marked `external` so `docker compose down -v` can't wipe
+  Pi auth (incl. the MCP adapter), shell history. Marked `external` so `docker compose down -v` can't wipe
   it; `run.sh` ensures it exists. Remove deliberately with `docker volume rm piecove-home`.
 - **`piecove-pgdata`** — disposable Postgres data, only with `--db`, recreatable via `db:prepare`.
 
@@ -299,7 +320,7 @@ commitment. Pick the provider that matches your sensitivity.
 
 ```text
 run.sh              launcher: resolves the repo, auto-detects Ruby/Postgres, builds, runs
-Dockerfile          the image: toolchains + Claude Code + Pi + gh + sentry
+Dockerfile          the image: toolchains + Claude Code + Pi + gh + heroku
 entrypoint.sh       wires the provider, mirrors config, sets up git/auth, drops to a shell
 docker-compose.yml  the piecove service (+ optional db) and volumes
 pi-allowlist.ts     Pi extension enforcing your Claude permissions.allow

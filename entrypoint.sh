@@ -82,6 +82,29 @@ ln -sfn /opt/piecove/pi-allowlist.ts "$HOME/.pi/agent/extensions/piecove-allowli
 ln -sfn /opt/piecove/pi-costlab.ts "$HOME/.pi/agent/extensions/piecove-costlab.ts"
 # Pi voice notifications: map Pi lifecycle events to the same claude-notify.sh.
 ln -sfn /opt/piecove/pi-notify.ts "$HOME/.pi/agent/extensions/piecove-notify.ts"
+# Pi MCP adapter (nicobailon/pi-mcp-adapter): a lazy proxy `mcp()` tool so Pi can
+# reach MCP servers declared in .mcp.json — the same file Claude Code reads — for
+# ~200 tokens instead of ~10k/server of upfront tool defs. It vendors into the
+# home volume, so install once and let it persist rather than baking it in.
+PI_SETTINGS="$HOME/.pi/agent/settings.json"
+if command -v pi >/dev/null 2>&1 && ! grep -q "pi-mcp-adapter" "$PI_SETTINGS" 2>/dev/null; then
+  echo "piecove: installing the Pi MCP adapter (one-time; needs network)…"
+  if pi install npm:pi-mcp-adapter; then
+    echo "piecove: Pi MCP adapter ready — 'pi' now has an mcp() tool (/mcp to manage)"
+  else
+    echo "piecove: Pi MCP adapter install failed; will retry next launch" >&2
+  fi
+fi
+# Trust the mounted repo's project-local Pi resources without prompting. The
+# container is the sandbox and you deliberately mounted this repo to work on it, so
+# its .claude skills, CLAUDE.md context, and settings should apply — otherwise Pi's
+# default ("ask") silently ignores them in headless mode. (Claude Code trusts the
+# project natively; this gives Pi parity.)
+if [ -f "$PI_SETTINGS" ]; then
+  tmp=$(mktemp) && jq '.defaultProjectTrust = "always"' "$PI_SETTINGS" > "$tmp" 2>/dev/null && mv "$tmp" "$PI_SETTINGS" || rm -f "$tmp"
+else
+  mkdir -p "$(dirname "$PI_SETTINGS")" && printf '{ "defaultProjectTrust": "always" }\n' > "$PI_SETTINGS"
+fi
 if [ -n "$A_BASE" ]; then
   [ -n "$KEY" ] && export PIECOVE_API_KEY="$KEY"
   cat > "$HOME/.pi/agent/models.json" <<JSON
