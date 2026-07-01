@@ -9,11 +9,22 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime/debug"
 
 	"github.com/childish-sambino/piecove/internal/cli"
 )
 
-var version = "dev" // set via -ldflags "-X main.version=..."
+var version = "" // set via -ldflags "-X main.version=..."; else module build info
+
+func resolveVersion() string {
+	if version != "" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version // populated by `go install module@version`
+	}
+	return "dev"
+}
 
 const usage = `piecove — run a coding agent in an isolated container against any repo
 
@@ -56,7 +67,7 @@ func main() {
 	case "doctor":
 		err = cli.Doctor(os.Args[2:])
 	case "version", "--version", "-v":
-		fmt.Println("piecove", version)
+		fmt.Println("piecove", resolveVersion())
 	case "help", "--help", "-h":
 		fmt.Print(usage)
 	default:
