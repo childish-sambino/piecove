@@ -1,0 +1,18 @@
+[
+  {
+    "id": "fizzbuzz",
+    "prompt": "Write a Ruby script at exactly /tmp/bench/fizzbuzz.rb that prints the numbers 1 to 15, one per line, replacing multiples of 3 with Fizz, multiples of 5 with Buzz, and multiples of 15 with FizzBuzz. Just create the file.",
+    "verify": "ruby /tmp/bench/fizzbuzz.rb > /tmp/bench/fb.out 2>/dev/null && [ \"$(sed -n 3p /tmp/bench/fb.out)\" = Fizz ] && [ \"$(sed -n 5p /tmp/bench/fb.out)\" = Buzz ] && [ \"$(sed -n 15p /tmp/bench/fb.out)\" = FizzBuzz ]"
+  },
+  {
+    "id": "json-sum",
+    "prompt": "Write a Python 3 script at exactly /tmp/bench/sum.py that reads a JSON array of integers from stdin and prints their sum. Just create the file.",
+    "verify": "[ \"$(echo '[2,3,4]' | python3 /tmp/bench/sum.py 2>/dev/null)\" = 9 ]"
+  },
+  {
+    "id": "bugfix",
+    "setup": "printf 'def slugify(s)\\n  s.downcase.gsub(/[^a-z0-9]+/, \" \").strip\\nend\\n' > /tmp/bench/slug.rb",
+    "prompt": "The file /tmp/bench/slug.rb defines a buggy slugify. Fix it in place so that slugify(\"Hello, World!\") returns exactly \"hello-world\" (lowercase, non-alphanumerics collapsed to single hyphens, no leading/trailing hyphen).",
+    "verify": "[ \"$(ruby -r/tmp/bench/slug.rb -e 'print slugify(\"Hello, World!\")' 2>/dev/null)\" = hello-world ]"
+  }
+]

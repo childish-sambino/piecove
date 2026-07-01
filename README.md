@@ -51,7 +51,7 @@ cp .env.example .env
 
 Set three things in `.env`:
 
-- `PROVIDER` — `fireworks` | `zai` | `openrouter` | `anthropic` | `bedrock`
+- `PROVIDER` — `fireworks` | `zai` | `openrouter` | `anthropic` | `bedrock` | `local`
 - `MODEL` — leave blank for the provider default, or pick one
 - `PIECOVE_API_KEY` — your key for that provider (blank for an Anthropic subscription; see below)
 
@@ -80,6 +80,7 @@ a generated Pi `~/.pi/agent/models.json`:
 | `openrouter` | openrouter.ai | `z-ai/glm-5.2` | One key, many models incl. Claude; set account ZDR |
 | `anthropic` | api.anthropic.com | `claude-opus-4-8` | Real Claude; key, or blank for subscription |
 | `bedrock` | AWS | (set `MODEL`) | Set `AWS_*` in `.env` instead of a key |
+| `local` | localhost:11434 | `qwen2.5-coder:7b` | Ollama on your Mac (host networking); Pi only; $0/token |
 
 ## The two agents
 
@@ -121,6 +122,90 @@ The container is the filesystem sandbox, but the agent can still make outward ca
   are blocked, anything else **prompts** (Allow once / Allow for session / Reject). Compound
   commands are split on `&& || ; |`, so an allowed prefix can't smuggle in an unapproved call.
   Headless (no UI) → unmatched commands are blocked, fail-safe.
+
+## Cost lab
+
+The point of piecove is running a capable agent for a fraction of Claude's price. The cost lab
+(`pi-costlab.ts`, a bundled Pi extension, auto-loaded) is the instrument panel that proves it —
+it meters every turn, shows you where the money goes, and gives you the levers to spend less.
+
+Everything is priced from **one shared table** (`pricing.json`, `$/1M tokens`), not the
+provider's own invoice, so a GLM turn and an Opus turn are measured on the same ruler. Each
+turn's cost is recomputed against the Opus baseline, so "what would this have cost on Claude?"
+is always on screen.
+
+A compact readout lives **always-on in the footer** (next to the git branch), refreshed every
+turn so you never have to ask for it — only the parts with data yet show up:
+
+```text
+⛁ piecove $0.610 · saved 94% · cache 93% · 12% of $5.00
+```
+
+Run `/cost` when you want the full picture:
+
+```text
+┌─ piecove · cost this session ─────────────────────
+│ spend        $0.830
+│ vs baseline  $9.41  →  saved $8.58 (91%)
+│ tokens       in 1.2M · out 100k · cached 14.9M (93% hit)
+│ budget       $0.830 / $5.00  [██░░░░░░░░] 17%
+│
+│ by model
+│  GLM-5.2            $0.610  ████████████████ 73%
+│  Claude Opus        $0.220  ██████░░░░░░░░░░ 27%
+│
+│ routing (24 turns)
+│  local       9  ████████░░
+│  standard   12  ██████████
+│  frontier    3  ███░░░░░░░
+│  advisory: routing to the classified tier would've cost $0.400 → save $0.430 more
+└────────────────────────────────────────────────────
+```
+
+What each part is doing:
+
+- **Ledger & savings** — every turn is metered and appended to `~/.pi/agent/piecove-cost/`
+  (`ledger.jsonl` + `latest.json`), with the running spend vs. the Opus baseline. This is the
+  number to show someone who thinks the frontier model is the only option.
+- **Cache-hit meter** — cached tokens read at ~0.1× price, so the hit-rate is a direct dial on
+  cost. A falling hit-rate means something is busting the prompt cache (caching is
+  Anthropic-flavored; open providers may ignore it and bill full input every turn).
+- **Budget guard** — set `PIECOVE_BUDGET=5` (dollars); the bar fills as you spend, warns at 80%,
+  and again when you cross it, so a runaway loop can't quietly rack up a bill.
+- **Router + classifier** — each prompt is classified `local` / `standard` / `frontier` from its
+  wording (a refactor or race-condition hunt → frontier; a rename or typo → local). By default
+  this is **advisory** — it shows what tier-routing *would* save without changing your model. To
+  make it **active**, set `PIECOVE_ROUTE_LOCAL` / `PIECOVE_ROUTE_STANDARD` / `PIECOVE_ROUTE_FRONTIER`
+  to model ids your provider serves, and the extension rewrites each turn's model to the
+  classified tier. (Cross-tier routing needs a multi-model endpoint like OpenRouter — one key,
+  many models.)
+- **Escalation signal** — after repeated tool errors on one turn, the lab flags that the cheap
+  model is stuck and a frontier model should take over.
+
+### Benchmark scorecard
+
+`bench/` answers the real question — *is the cheap model actually good enough?* — with numbers
+instead of vibes. A fixed task suite (`tasks.json`) runs headlessly across whatever models you
+name, each result verified deterministically, cost read from the ledger:
+
+```bash
+# inside the container, with an OpenRouter key (one key serves every model below)
+bash bench/run.sh z-ai/glm-5.2 anthropic/claude-opus-4.8 openai/gpt-5.5
+```
+
+`scorecard.mjs` ranks by cost-per-success and prints the one line worth screenshotting:
+
+```text
+| Model         | Quality      | Total cost | Cost/success | Avg s |
+|---------------|--------------|-----------:|-------------:|------:|
+| z-ai/glm-5.2  | 3/3 (100%)   | $0.0035    | $0.0012      | 6     |
+| claude-opus-4.8 | 3/3 (100%) | $0.0460    | $0.0153      | 7     |
+
+> GLM-5.2 matched 100% quality at 8% of Opus's cost — the multi-provider case in one line.
+```
+
+Add your own tasks to `tasks.json` (a prompt + a shell `verify` that exits 0 on success) to
+benchmark against work that looks like *yours*, not a toy.
 
 ## Sentry CLI
 
@@ -202,7 +287,7 @@ commitment. Pick the provider that matches your sensitivity.
 ## Notes & gotchas
 
 - Prompt caching is Anthropic-specific; non-Anthropic providers may ignore it, so expect to pay
-  full input tokens each turn.
+  full input tokens each turn. The `/cost` cache-hit meter shows whether it's actually landing.
 - Running a test suite needs the repo's deps installed in the container (`bundle install` /
   `npm install`) — host builds are the wrong platform. Add system libs to the Dockerfile if a
   native gem/wheel needs one.
@@ -218,6 +303,9 @@ Dockerfile          the image: toolchains + Claude Code + Pi + gh + sentry
 entrypoint.sh       wires the provider, mirrors config, sets up git/auth, drops to a shell
 docker-compose.yml  the piecove service (+ optional db) and volumes
 pi-allowlist.ts     Pi extension enforcing your Claude permissions.allow
+pi-costlab.ts       Pi extension: metering, budget guard, router, /cost dashboard
+pricing.json        cross-provider price table the cost lab meters against
+bench/              headless cost-vs-quality benchmark suite + scorecard
 host-bridge.sh      Mac-side: opens OAuth URLs and plays voice notifications
 browser-open.sh     in-container browser shim (hands OAuth URLs to the Mac)
 say-forward.sh      in-container `say` shim (forwards TTS to the Mac)

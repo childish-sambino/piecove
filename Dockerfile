@@ -77,6 +77,9 @@ RUN useradd --create-home --shell /bin/bash ${USERNAME}
 COPY pi-allowlist.ts /opt/piecove/pi-allowlist.ts
 # Pi voice-notification extension — maps Pi lifecycle events to claude-notify.sh.
 COPY pi-notify.ts /opt/piecove/pi-notify.ts
+# Pi cost-lab extension + the cross-provider price table it meters against.
+COPY pi-costlab.ts /opt/piecove/pi-costlab.ts
+COPY pricing.json /opt/piecove/pricing.json
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

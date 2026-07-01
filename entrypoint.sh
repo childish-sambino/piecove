@@ -43,7 +43,10 @@ case "$PROVIDER" in
   openrouter) A_BASE="https://openrouter.ai/api";          : "${MODEL:=z-ai/glm-5.2}" ;;
   anthropic)  PI_PROVIDER="anthropic";      : "${MODEL:=claude-opus-4-8}" ;;
   bedrock)    PI_PROVIDER="amazon-bedrock" ;;
-  *) echo "piecove: unknown PROVIDER='$PROVIDER' (use fireworks|zai|openrouter|anthropic|bedrock)" >&2 ;;
+  # Local models via Ollama on your Mac (reachable at localhost thanks to host
+  # networking) — OpenAI-compatible, so Pi only. Marginal cost: $0.
+  local)      A_BASE="http://localhost:11434/v1"; PI_API="openai-completions"; : "${MODEL:=qwen2.5-coder:7b}" ;;
+  *) echo "piecove: unknown PROVIDER='$PROVIDER' (use fireworks|zai|openrouter|anthropic|bedrock|local)" >&2 ;;
 esac
 MODEL="${MODEL:-}"
 
@@ -59,13 +62,15 @@ if [ "$PROVIDER" = "anthropic" ]; then
 elif [ "$PROVIDER" = "bedrock" ]; then
   export CLAUDE_CODE_USE_BEDROCK=1   # AWS creds come from the environment
   [ -n "$MODEL" ] && export ANTHROPIC_MODEL="$MODEL"
-elif [ -n "$A_BASE" ]; then
+elif [ -n "$A_BASE" ] && [ "$PI_API" = "anthropic-messages" ]; then
   export ANTHROPIC_BASE_URL="$A_BASE"
   [ -n "$KEY" ] && export ANTHROPIC_AUTH_TOKEN="$KEY"
   export ANTHROPIC_DEFAULT_OPUS_MODEL="$MODEL"
   export ANTHROPIC_DEFAULT_SONNET_MODEL="$MODEL"
   export ANTHROPIC_DEFAULT_HAIKU_MODEL="$MODEL"
 fi
+# Note: PROVIDER=local is an OpenAI-compatible endpoint (Ollama), so Claude Code
+# isn't wired for it — use `pi` for local models, or `claude-sub` for your plan.
 
 # Pi wiring: a custom-provider models.json for the proxy presets; Pi's built-in
 # provider for anthropic/bedrock. apiKey uses $-interpolation so the key isn't
@@ -73,6 +78,8 @@ fi
 mkdir -p "$HOME/.pi/agent/extensions"
 # Pi permission gate: enforce your Claude permissions.allow on Pi's bash tool.
 ln -sfn /opt/piecove/pi-allowlist.ts "$HOME/.pi/agent/extensions/piecove-allowlist.ts"
+# Pi cost lab: metering, budget guard, router/escalation, and the /cost dashboard.
+ln -sfn /opt/piecove/pi-costlab.ts "$HOME/.pi/agent/extensions/piecove-costlab.ts"
 # Pi voice notifications: map Pi lifecycle events to the same claude-notify.sh.
 ln -sfn /opt/piecove/pi-notify.ts "$HOME/.pi/agent/extensions/piecove-notify.ts"
 if [ -n "$A_BASE" ]; then

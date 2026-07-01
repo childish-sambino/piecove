@@ -1,0 +1,19 @@
+{
+  "_comment": "USD per 1,000,000 tokens. `match` is a case-insensitive substring tested against the model id (e.g. 'z-ai/glm-5.2', 'accounts/fireworks/models/glm-5p2', 'claude-opus-4-8'). First match wins, so order specific -> general. Prices drift constantly — treat this as config and update it. `baselineMatch` picks the 'what if we ran everything on this' comparison model that drives the savings number.",
+  "baselineMatch": "opus",
+  "default": { "label": "unknown", "input": 3, "output": 15, "cacheRead": 0.3, "cacheWrite": 3.75 },
+  "models": [
+    { "match": "opus",     "label": "Claude Opus",    "input": 5,    "output": 25,   "cacheRead": 0.5,  "cacheWrite": 6.25 },
+    { "match": "sonnet",   "label": "Claude Sonnet",  "input": 3,    "output": 15,   "cacheRead": 0.3,  "cacheWrite": 3.75 },
+    { "match": "haiku",    "label": "Claude Haiku",   "input": 1,    "output": 5,    "cacheRead": 0.1,  "cacheWrite": 1.25 },
+    { "match": "gpt-5.5",  "label": "GPT-5.5",        "input": 5,    "output": 30,   "cacheRead": 0.5,  "cacheWrite": 6.25 },
+    { "match": "gpt-5",    "label": "GPT-5",          "input": 2.5,  "output": 15,   "cacheRead": 0.25, "cacheWrite": 3.13 },
+    { "match": "gemini-3", "label": "Gemini 3 Pro",   "input": 2,    "output": 12,   "cacheRead": 0.2,  "cacheWrite": 2.5 },
+    { "match": "glm-5p2",  "label": "GLM-5.2 (FW)",   "input": 0.6,  "output": 2.2,  "cacheRead": 0.11, "cacheWrite": 0.75 },
+    { "match": "glm-5.2",  "label": "GLM-5.2",        "input": 0.6,  "output": 2.2,  "cacheRead": 0.11, "cacheWrite": 0.75 },
+    { "match": "deepseek", "label": "DeepSeek-V4",    "input": 0.44, "output": 0.87, "cacheRead": 0.04, "cacheWrite": 0.55 },
+    { "match": "qwen",     "label": "Qwen3-Coder",    "input": 0.22, "output": 1.0,  "cacheRead": 0.02, "cacheWrite": 0.28 },
+    { "match": "localhost","label": "Local (Ollama)", "input": 0,    "output": 0,    "cacheRead": 0,    "cacheWrite": 0 },
+    { "match": "ollama",   "label": "Local (Ollama)", "input": 0,    "output": 0,    "cacheRead": 0,    "cacheWrite": 0 }
+  ]
+}
