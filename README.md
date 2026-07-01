@@ -117,11 +117,15 @@ The container is the filesystem sandbox, but the agent can still make outward ca
 
 - **Claude Code** uses its native `permissions.allow` from your `settings.json`.
 - **Pi** gets a bundled extension (`pi-allowlist.ts`, auto-loaded) that reads the **same**
-  `~/.claude/settings.json` `permissions.allow`/`deny` — so you define patterns in **one place**
-  and both agents honor them. It gates the `bash` tool: allowlisted commands run, denied ones
-  are blocked, anything else **prompts** (Allow once / Allow for session / Reject). Compound
-  commands are split on `&& || ; |`, so an allowed prefix can't smuggle in an unapproved call.
-  Headless (no UI) → unmatched commands are blocked, fail-safe.
+  `permissions.allow`/`deny` — so you define patterns in **one place** and both agents honor
+  them. It gates the `bash` tool: allowlisted commands run, denied ones are blocked, anything
+  else **prompts** (Allow once / Allow for session / Reject). Compound commands are split on
+  `&& || ; |`, so an allowed prefix can't smuggle in an unapproved call. Headless (no UI) →
+  unmatched commands are blocked, fail-safe.
+
+Rules come from your home `~/.claude/settings.json` **and** the launched repo's
+`.claude/settings.json` (+ `settings.local.json`), merged — so a project's own allow/deny list
+applies too, the same way Claude Code layers project settings over user settings.
 
 ## MCP
 
@@ -250,6 +254,13 @@ benchmark against work that looks like *yours*, not a toy.
 - **Your Claude config** — `~/.claude/CLAUDE.md`, `skills/`, and `settings.json` are staged
   (symlinks resolved) and mirrored to *both* agents; project `.mcp.json` servers are
   auto-approved.
+- **The launched repo's `.claude/`** — a project can ship its own config, and both agents pick
+  it up on top of your home config. Claude Code reads it natively (root `CLAUDE.md`,
+  `.claude/skills`, `.claude/settings.json`). For Pi, the entrypoint bridges the Claude layout:
+  `--skill .claude/skills`, `--append-system-prompt .claude/CLAUDE.md`, and the allowlist merges
+  `.claude/settings.json` permissions. The container also sets Pi's `defaultProjectTrust:
+  "always"` — you mounted this repo to work on it, so its project resources (skills, context,
+  `.pi` extensions, `.mcp.json`) apply without a per-run trust prompt.
 
 ## GitHub access
 

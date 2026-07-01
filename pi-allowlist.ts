@@ -1,11 +1,12 @@
 // piecove · Pi permission gate
 //
 // Pi has no built-in allowlist, but its `tool_call` hook can block/approve a tool
-// before it runs. This reuses your Claude Code permissions (~/.claude/settings.json
-// `permissions.allow` / `permissions.deny`) so Pi enforces the SAME rules you use in
-// Claude Code — focused on the `bash` tool, which is where CLI and network calls
-// (gh push, curl, psql to prod, …) happen. The container is the filesystem sandbox;
-// this gates the outward stuff the sandbox doesn't.
+// before it runs. This reuses your Claude Code permissions (`permissions.allow` /
+// `permissions.deny`) so Pi enforces the SAME rules you use in Claude Code — focused
+// on the `bash` tool, which is where CLI and network calls (gh push, curl, psql to
+// prod, …) happen. The container is the filesystem sandbox; this gates the outward
+// stuff the sandbox doesn't. Rules come from your home ~/.claude/settings.json AND
+// the launched repo's .claude/settings.json(.local) — merged, like Claude Code.
 //
 // Behaviour (mirrors Claude Code's default mode):
 //   - any segment matches a deny pattern                              → blocked
@@ -49,15 +50,34 @@ function bashPatterns(arr: unknown): string[] {
     .filter(Boolean);
 }
 
-function loadRules() {
-  const dir = process.env.CLAUDE_CONFIG_DIR || `${process.env.HOME}/.claude`;
-  let perms: any = {};
+function readPerms(path: string): { allow: string[]; deny: string[] } {
   try {
-    perms = JSON.parse(readFileSync(`${dir}/settings.json`, "utf8")).permissions || {};
+    const perms = JSON.parse(readFileSync(path, "utf8")).permissions || {};
+    return { allow: bashPatterns(perms.allow), deny: bashPatterns(perms.deny) };
   } catch {
-    /* no settings → no gating */
+    return { allow: [], deny: [] }; // missing/invalid settings contribute nothing
   }
-  return { allow: compile(bashPatterns(perms.allow)), deny: compile(bashPatterns(perms.deny)) };
+}
+
+// Merge your home Claude permissions with the launched repo's project `.claude`
+// settings (same precedence idea as Claude Code: project rules add to user rules),
+// so Pi honors a repo's own allow/deny list, not just your global one.
+function loadRules() {
+  const home = process.env.CLAUDE_CONFIG_DIR || `${process.env.HOME}/.claude`;
+  const cwd = process.cwd(); // Pi runs in the project dir (the mounted repo)
+  const sources = [
+    `${home}/settings.json`,
+    `${cwd}/.claude/settings.json`,
+    `${cwd}/.claude/settings.local.json`,
+  ];
+  const allow: string[] = [];
+  const deny: string[] = [];
+  for (const s of sources) {
+    const p = readPerms(s);
+    allow.push(...p.allow);
+    deny.push(...p.deny);
+  }
+  return { allow: compile(allow), deny: compile(deny) };
 }
 
 // Split a command on unquoted ; | || && and newlines. Quote-aware so operators
@@ -150,3 +170,6 @@ export default function (pi: any) {
     return { block: true, reason: "piecove: rejected by user" };
   });
 }
+
+// Exposed for unit tests.
+export const _internal = { loadRules, readPerms, segments, isSafe, compile, bashPatterns };

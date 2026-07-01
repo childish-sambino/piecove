@@ -111,10 +111,19 @@ if [ -n "$A_BASE" ]; then
 { "providers": { "piecove": { "baseUrl": "$A_BASE", "api": "$PI_API", "apiKey": "\$PIECOVE_API_KEY", "models": [ { "id": "$MODEL", "name": "piecove ($PROVIDER)" } ] } } }
 JSON
 fi
+# Pull the launched repo's own .claude into Pi. Claude Code reads project config
+# natively (root CLAUDE.md, .claude/skills, .claude/settings.json); Pi doesn't know
+# the .claude layout, so bridge it via flags on the `pi` alias:
+#   .claude/skills    → --skill               (Pi discovers .pi/.agents skills, not .claude/)
+#   .claude/CLAUDE.md → --append-system-prompt (root CLAUDE.md is auto-discovered already)
+# Project .claude/settings.json permissions are merged in by the allowlist extension.
+PI_PROJECT_FLAGS=""
+[ -d /workspace/.claude/skills ]    && PI_PROJECT_FLAGS="$PI_PROJECT_FLAGS --skill /workspace/.claude/skills"
+[ -f /workspace/.claude/CLAUDE.md ] && PI_PROJECT_FLAGS="$PI_PROJECT_FLAGS --append-system-prompt /workspace/.claude/CLAUDE.md"
 if [ -n "$MODEL" ]; then
-  PI_ALIAS="alias pi='pi --provider $PI_PROVIDER --model \"$MODEL\"'"
+  PI_ALIAS="alias pi='pi --provider $PI_PROVIDER --model \"$MODEL\"$PI_PROJECT_FLAGS'"
 else
-  PI_ALIAS="# set MODEL to enable the pi alias; otherwise: pi --provider $PI_PROVIDER --model <id>"
+  PI_ALIAS="# set MODEL to enable the pi alias; otherwise: pi --provider $PI_PROVIDER --model <id>$PI_PROJECT_FLAGS"
 fi
 
 # `claude-sub` runs Claude Code on your Anthropic SUBSCRIPTION even when the env is
