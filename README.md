@@ -300,7 +300,11 @@ itself** — web, JS/CSS watchers, Sidekiq, Redis, Postgres:
 - **On your Mac** — host networking means the app is just there: `http://localhost:3000` (and
   the JS watcher's port) open directly.
 
-Your shell is usable immediately while it boots. From the shell:
+Shell entry **waits for the app to actually answer on its port**, streaming the bootstrap log
+as progress — so when you land at the prompt (or your command runs), everything is up. Escape
+hatches: Ctrl-C drops you to the shell without waiting, `--no-wait` never waits, and a dead
+stack or the timeout (`PIECOVE_WAIT_TIMEOUT`, default 600s) fails fast instead of hanging.
+From the shell:
 
 ```bash
 serve-logs    # tail the bootstrap + app output

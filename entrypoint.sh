@@ -145,7 +145,33 @@ if [ "${PIECOVE_SERVE:-}" = "1" ] && [ -f /workspace/config/application.rb ]; th
     export DATABASE_URL="${DATABASE_URL:-postgres://${PGUSER:-postgres}:${PGPASSWORD:-postgres}@localhost:${PGPORT:-5432}/${PIECOVE_APP:-app}_dev_slot$SLOT}"
   fi
   setsid piecove-serve >/dev/null 2>&1 &
-  SERVE_BANNER="echo \"          rails: booting in background → http://localhost:$PORT  (serve-logs · serve-stop · serve-start)\""
+  SERVE_BANNER="echo \"          rails: http://localhost:$PORT  (serve-logs · serve-stop · serve-start)\""
+
+  # Block until the app answers on its port, streaming the bootstrap log as
+  # progress — so the shell (or command) starts with everything actually up.
+  # Escape hatches: Ctrl-C skips the wait, run.sh --no-wait never waits, a dead
+  # stack or the timeout drops you to the shell with a pointer at serve-logs.
+  if [ "${PIECOVE_WAIT:-1}" != "0" ]; then
+    echo "piecove: waiting for the app on :$PORT (Ctrl-C to drop to the shell now)…"
+    tail -n +1 -F /tmp/piecove-serve.log 2>/dev/null &
+    TAIL_PID=$!
+    SKIP=0; WAITED=0
+    trap 'SKIP=1' INT
+    until (exec 3<>"/dev/tcp/localhost/$PORT") 2>/dev/null; do
+      [ "$SKIP" = "1" ] && { echo "piecove: skipping the wait — 'serve-logs' to keep watching"; break; }
+      SERVE_PID="$(cat /tmp/piecove-serve.pid 2>/dev/null)"
+      if [ -n "$SERVE_PID" ] && ! kill -0 "$SERVE_PID" 2>/dev/null; then
+        echo "piecove: dev stack exited before the app came up — 'serve-logs' has the story"; break
+      fi
+      if [ "$WAITED" -ge "${PIECOVE_WAIT_TIMEOUT:-600}" ]; then
+        echo "piecove: not up after ${WAITED}s — dropping to the shell; 'serve-logs' to keep watching"; break
+      fi
+      sleep 2; WAITED=$((WAITED + 2))
+    done
+    trap - INT
+    kill "$TAIL_PID" 2>/dev/null
+    (exec 3<>"/dev/tcp/localhost/$PORT") 2>/dev/null && echo "piecove: app is up → http://localhost:$PORT"
+  fi
 fi
 
 # `claude-sub` runs Claude Code on your Anthropic SUBSCRIPTION even when the env is

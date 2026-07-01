@@ -7,6 +7,7 @@
 #   path/to/piecove/run.sh ~/code/myrepo --no-db # skip Postgres even if detected
 #   path/to/piecove/run.sh ~/code/myrepo --no-serve # don't auto-boot a Rails app
 #   path/to/piecove/run.sh ~/code/myrepo --slot=2 # serve on :3002 with its own db
+#   path/to/piecove/run.sh ~/code/myrepo --no-wait # don't block the shell on app boot
 #   path/to/piecove/run.sh ~/code/myrepo claude  # run a command instead of a shell
 #
 # Postgres auto-starts when the repo uses it (a `pg` gem / postgresql database.yml);
@@ -32,6 +33,7 @@ for a in "$@"; do
     --no-db) WANT_DB=0 ;;
     --serve) WANT_SERVE=1 ;;
     --no-serve) WANT_SERVE=0 ;;
+    --no-wait) export PIECOVE_WAIT=0 ;;
     --slot=*) SLOT_ARG="${a#*=}" ;;
     *)
       if [ -z "$WORKSPACE_DIR" ] && [ -d "$a" ]; then

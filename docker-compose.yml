@@ -25,6 +25,8 @@ services:
       # the app's name for the per-slot database (container only sees /workspace).
       PIECOVE_SLOT: ${PIECOVE_SLOT:-0}
       PIECOVE_APP: ${PIECOVE_APP:-app}
+      # 0 (run.sh --no-wait) → don't block shell entry on the app booting
+      PIECOVE_WAIT: ${PIECOVE_WAIT:-1}
     volumes:
       # The repo/working dir the agent operates on (run.sh sets WORKSPACE_DIR).
       - ${WORKSPACE_DIR:-./workspace}:/workspace
