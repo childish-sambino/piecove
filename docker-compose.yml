@@ -21,6 +21,10 @@ services:
       GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
       # 1 when run.sh detected a Rails app (or --serve) → entrypoint auto-serves it
       PIECOVE_SERVE: ${PIECOVE_SERVE:-}
+      # Parallel-instance slot (port 3000+slot, per-slot db + redis DB number) and
+      # the app's name for the per-slot database (container only sees /workspace).
+      PIECOVE_SLOT: ${PIECOVE_SLOT:-0}
+      PIECOVE_APP: ${PIECOVE_APP:-app}
     volumes:
       # The repo/working dir the agent operates on (run.sh sets WORKSPACE_DIR).
       - ${WORKSPACE_DIR:-./workspace}:/workspace

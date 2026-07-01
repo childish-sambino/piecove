@@ -308,10 +308,30 @@ serve-stop    # stop the whole stack (web, watchers, sidekiq)
 serve-start   # boot it again
 ```
 
-The stack lives and dies with the container — each `run.sh` gets a fresh one (a second
-concurrent shell against the same app will lose the port race; run it with `--no-serve`).
-First boot pays for `bundle install`; the gem cache persists in a volume, so next launches
-skip straight to booting.
+The stack lives and dies with the container — each `run.sh` gets a fresh one. First boot pays
+for `bundle install`; the gem cache persists in a volume, so next launches skip straight to
+booting.
+
+### Parallel instances (one issue per worktree)
+
+Run several instances of the same app side by side — each `run.sh` is its own container, and
+each served app gets a **slot** so nothing crosses:
+
+```bash
+git -C ~/code/app worktree add ../app-issue-42 sam/issue-42
+./run.sh ~/code/app            # slot 0 → http://localhost:3000
+./run.sh ~/code/app-issue-42   # slot 1 → http://localhost:3001 (auto-picked)
+```
+
+A slot means: **port** `3000+slot`; its **own Postgres database** (`<app>_dev_slot<N>` on the
+shared server, created by `db:prepare`) so branches never fight over migrations; and its **own
+Redis DB number**, so one instance's Sidekiq workers can't run jobs enqueued by another
+instance running different code. The first free port is picked automatically; `--slot=N` pins
+it. Slot 0 keeps the app's own defaults untouched.
+
+Caveats: JS watchers (Vite/esbuild) with their own hardcoded ports can still collide across
+instances, and a `Procfile.dev` that hardcodes `-p 3000` beats the `PORT` env — parameterize it
+(`-p ${PORT:-3000}`) if you hit that.
 
 ## Container ↔ Mac bridge (`host-bridge`)
 

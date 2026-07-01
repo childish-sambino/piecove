@@ -6,11 +6,17 @@
 #   path/to/piecove/run.sh ~/code/myrepo --db    # force-start Postgres
 #   path/to/piecove/run.sh ~/code/myrepo --no-db # skip Postgres even if detected
 #   path/to/piecove/run.sh ~/code/myrepo --no-serve # don't auto-boot a Rails app
+#   path/to/piecove/run.sh ~/code/myrepo --slot=2 # serve on :3002 with its own db
 #   path/to/piecove/run.sh ~/code/myrepo claude  # run a command instead of a shell
 #
 # Postgres auto-starts when the repo uses it (a `pg` gem / postgresql database.yml);
 # --db / --no-db force it on or off. A Rails app auto-serves (bin/dev + Sidekiq +
 # Redis, bootstrapped in the background); --serve / --no-serve force it on or off.
+#
+# Parallel instances (one worktree per issue): each run.sh gets its own container,
+# and each served app gets a SLOT — port 3000+slot, its own Postgres database, and
+# its own Redis DB number, so web/schema/Sidekiq queues never cross. The first free
+# port is picked automatically; --slot=N pins it.
 set -euo pipefail
 
 # Parse args BEFORE cd-ing into the script's dir, so a relative path like `.`
@@ -26,6 +32,7 @@ for a in "$@"; do
     --no-db) WANT_DB=0 ;;
     --serve) WANT_SERVE=1 ;;
     --no-serve) WANT_SERVE=0 ;;
+    --slot=*) SLOT_ARG="${a#*=}" ;;
     *)
       if [ -z "$WORKSPACE_DIR" ] && [ -d "$a" ]; then
         WORKSPACE_DIR="$(cd "$a" && pwd)"
@@ -96,6 +103,24 @@ fi
 export PIECOVE_SERVE="$WANT_SERVE"
 WANT_REDIS=0
 if [ "$WANT_SERVE" = "1" ] && needs_redis "$WORKSPACE_DIR"; then WANT_REDIS=1; fi
+
+# Slot: which parallel instance this is. Port 3000+slot on your Mac; slot >0 also
+# gets its own Postgres database and Redis DB number (wired in the entrypoint) so
+# parallel worktrees of the same app don't share schema or Sidekiq queues.
+PIECOVE_SLOT=0
+if [ "$WANT_SERVE" = "1" ]; then
+  if [ -n "${SLOT_ARG:-}" ]; then
+    PIECOVE_SLOT="$SLOT_ARG"
+  else
+    while nc -z localhost $((3000 + PIECOVE_SLOT)) >/dev/null 2>&1 && [ "$PIECOVE_SLOT" -lt 10 ]; do
+      PIECOVE_SLOT=$((PIECOVE_SLOT + 1))
+    done
+  fi
+  [ "$PIECOVE_SLOT" -gt 0 ] && echo "piecove: slot $PIECOVE_SLOT → app on http://localhost:$((3000 + PIECOVE_SLOT)), isolated db + sidekiq queues"
+fi
+export PIECOVE_SLOT
+# App name for the per-slot database (the container only ever sees /workspace).
+export PIECOVE_APP="$(basename "$WORKSPACE_DIR" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9_' '_' | sed 's/_*$//')"
 
 # Stage the user's own ~/.claude config (CLAUDE.md, skills, settings, hooks) for
 # mirroring. -L resolves symlinks so it works whether they're real files or links

@@ -133,9 +133,19 @@ fi
 # shell. It dies with the container — each run.sh gets a fresh stack.
 SERVE_BANNER=""
 if [ "${PIECOVE_SERVE:-}" = "1" ] && [ -f /workspace/config/application.rb ]; then
-  export REDIS_URL="${REDIS_URL:-redis://localhost:6379/0}"
+  # Slot wiring: parallel instances of the same app each get their own port,
+  # database, and Sidekiq queues (slot 0 = the app's own defaults).
+  SLOT="${PIECOVE_SLOT:-0}"
+  export PORT=$((3000 + SLOT))       # rails server reads PORT; foreman gets -p
+  export BINDING=0.0.0.0             # bind beyond loopback so the Mac can reach it
+  export REDIS_URL="${REDIS_URL:-redis://localhost:6379/$SLOT}"  # per-slot queue namespace
+  if [ "$SLOT" -gt 0 ] && grep -qs "postgresql" /workspace/config/database.yml; then
+    # Own database on the shared Postgres so branches don't fight over migrations;
+    # db:prepare creates it on first boot.
+    export DATABASE_URL="${DATABASE_URL:-postgres://${PGUSER:-postgres}:${PGPASSWORD:-postgres}@localhost:${PGPORT:-5432}/${PIECOVE_APP:-app}_dev_slot$SLOT}"
+  fi
   setsid piecove-serve >/dev/null 2>&1 &
-  SERVE_BANNER="echo \"          rails: booting in background → http://localhost:3000  (serve-logs · serve-stop · serve-start)\""
+  SERVE_BANNER="echo \"          rails: booting in background → http://localhost:$PORT  (serve-logs · serve-stop · serve-start)\""
 fi
 
 # `claude-sub` runs Claude Code on your Anthropic SUBSCRIPTION even when the env is

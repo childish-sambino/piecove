@@ -17,7 +17,7 @@ LOG=/tmp/piecove-serve.log
 echo $$ > /tmp/piecove-serve.pid
 exec >> "$LOG" 2>&1
 
-echo "── piecove-serve start ──"
+echo "── piecove-serve start (port ${PORT:-3000}) ──"
 
 # Bootstrap only what's missing, so warm starts go straight to the processes.
 if [ -f Gemfile ] && ! bundle check >/dev/null 2>&1; then
@@ -50,8 +50,8 @@ if [ -x bin/dev ]; then
   exec bin/dev
 elif [ -f Procfile.dev ]; then
   command -v foreman >/dev/null 2>&1 || { echo "→ gem install foreman"; gem install foreman; }
-  echo "→ foreman start -f Procfile.dev"
-  exec foreman start -f Procfile.dev
+  echo "→ foreman start -f Procfile.dev -p ${PORT:-3000}"
+  exec foreman start -f Procfile.dev -p "${PORT:-3000}"
 elif [ -f bin/rails ]; then
   echo "→ bin/rails server"
   exec bin/rails server -b 0.0.0.0
