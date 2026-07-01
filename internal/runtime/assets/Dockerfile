@@ -1,5 +1,5 @@
 # Ruby version — auto-detected from the working dir's .ruby-version / Gemfile by
-# run.sh and passed as a build arg. Falls back to a recent default.
+# the piecove CLI and passed as a build arg. Falls back to a recent default.
 ARG RUBY_VERSION=3.4.1
 FROM ruby:${RUBY_VERSION}-slim-bookworm
 
@@ -32,31 +32,36 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 RUN npm install -g @anthropic-ai/claude-code
 RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent
 
-# Service CLIs:
-#   heroku  — official Heroku CLI (npm)
-# Other services (Linear, Better Stack, etc.) are reached via MCP as needed — see
-# the Pi MCP adapter + your mirrored .mcp.json, so no per-service CLI is baked in.
-RUN npm install -g heroku
-
 # yarn/pnpm via corepack, for served apps whose lockfile picks them.
 RUN npm install -g corepack && corepack enable
 
+# Your extras (set PIECOVE_EXTRA_APT / PIECOVE_EXTRA_NPM in config.env), for the
+# odd system lib a native gem needs or a service CLI you want in every session.
+# Other services (Linear, Sentry, a browser, …) are better reached via MCP.
+ARG EXTRA_APT_PACKAGES=""
+ARG EXTRA_NPM_PACKAGES=""
+RUN if [ -n "$EXTRA_APT_PACKAGES" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends $EXTRA_APT_PACKAGES \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
+RUN if [ -n "$EXTRA_NPM_PACKAGES" ]; then npm install -g $EXTRA_NPM_PACKAGES; fi
+
 # Stub the macOS/mise commands a user's notify hooks may shell out to, so those
 # hooks no-op on Linux instead of erroring. `say` is handled separately (forwarded
-# to the Mac). `source` is shimmed because Claude Code runs hooks under dash.
+# to the host). `source` is shimmed because Claude Code runs hooks under dash.
 RUN for cmd in afplay mise osascript terminal-notifier source; do \
       printf '#!/bin/sh\nexit 0\n' > /usr/local/bin/$cmd && chmod +x /usr/local/bin/$cmd; \
     done
 
 # Headless "browser": agent CLIs call xdg-open/$BROWSER for OAuth URLs; this shim
-# hands the URL to a host-mounted file that ./host-bridge opens on the Mac.
-COPY browser-open.sh /usr/local/bin/xdg-open
+# hands the URL to a host-mounted file that `piecove bridge` opens on your host.
+COPY shims/browser-open.sh /usr/local/bin/xdg-open
 RUN chmod +x /usr/local/bin/xdg-open && cp /usr/local/bin/xdg-open /usr/local/bin/open
 ENV BROWSER=/usr/local/bin/xdg-open
 
-# Forward macOS `say` to the Mac so TTS notify hooks play on your speakers
-# (./host-bridge --watch runs the real `say`).
-COPY say-forward.sh /usr/local/bin/say
+# Forward macOS-style `say` to the host so TTS notify hooks play on real speakers
+# (`piecove bridge --watch` runs the actual TTS engine).
+COPY shims/say-forward.sh /usr/local/bin/say
 RUN chmod +x /usr/local/bin/say
 
 # Non-root user (agent CLIs refuse permissioned modes as root; keeps the named
@@ -64,14 +69,17 @@ RUN chmod +x /usr/local/bin/say
 ARG USERNAME=agent
 RUN useradd --create-home --shell /bin/bash ${USERNAME}
 
-# Pi permission-gate extension — reads your Claude permissions.allow so Pi enforces
-# the same allowlist (gates the bash tool's CLI/network calls). See pi-allowlist.ts.
-COPY pi-allowlist.ts /opt/piecove/pi-allowlist.ts
-# Pi voice-notification extension — maps Pi lifecycle events to claude-notify.sh.
-COPY pi-notify.ts /opt/piecove/pi-notify.ts
-# Pi cost-lab extension + the cross-provider price table it meters against.
-COPY pi-costlab.ts /opt/piecove/pi-costlab.ts
+# Pi extensions: permission gate (enforces your Claude permissions.allow on Pi's
+# bash tool + audit log), cost lab (metering, budget guard, router, /cost), and
+# voice notifications — plus the cross-provider price table the lab meters with.
+COPY extensions/pi-allowlist.ts /opt/piecove/pi-allowlist.ts
+COPY extensions/pi-costlab.ts /opt/piecove/pi-costlab.ts
+COPY extensions/pi-notify.ts /opt/piecove/pi-notify.ts
 COPY pricing.json /opt/piecove/pricing.json
+
+# Benchmark suite (cost-vs-quality scorecard): run in-container with
+#   bash /opt/piecove/bench/run.sh <model-id> [<model-id> ...]
+COPY bench /opt/piecove/bench
 
 # Rails dev-stack launcher — bootstraps and runs the mounted app's bin/dev/Procfile
 # processes (auto-launched by the entrypoint when the workspace is a Rails app).
@@ -87,10 +95,10 @@ RUN mkdir -p /home/${USERNAME}/.claude /home/${USERNAME}/.pi/agent
 WORKDIR /workspace
 
 # Keep Claude Code's global state (theme, onboarding, per-folder trust) on the
-# persisted config volume, not in the ephemeral home.
+# persisted home volume.
 ENV CLAUDE_CONFIG_DIR=/home/agent/.claude
 
-# Default Postgres connection for the optional db service (used with --db).
+# Default Postgres connection for the optional db service.
 ENV PGHOST=localhost PGPORT=5432 PGUSER=postgres PGPASSWORD=postgres
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

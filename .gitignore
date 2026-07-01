@@ -1,5 +1,15 @@
+# Built binary
+/piecove
+
+# Local bench output
+results.jsonl
+
+# Legacy local state from the pre-CLI layout (now lives under ~/.piecove).
+# Kept ignored so an upgrade never risks committing keys or personal config.
 .env
 .auth/
 .agent-config/
-workspace/*
-!workspace/.gitkeep
+workspace/
+
+# Editor/OS noise
+.DS_Store

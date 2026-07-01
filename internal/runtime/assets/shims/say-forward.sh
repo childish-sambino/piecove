@@ -2,7 +2,7 @@
 # Stand-in for macOS `say` inside the container. claude-notify.sh runs
 # `say -v <voice> -o <file> <text>` for TTS notifications, but there's no audio
 # device here — so drop the voice + text into a host-mounted queue. The watcher
-# on your Mac (./host-bridge --watch) plays it through the real `say`.
+# on your host (piecove bridge --watch) plays it through a real TTS engine.
 voice=""
 text=""
 while [ $# -gt 0 ]; do

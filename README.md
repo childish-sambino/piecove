@@ -1,26 +1,30 @@
 # piecove
 
 Run a coding agent — **Claude Code** or **Pi** — in an isolated container against any repo,
-pointed at any model/provider, with minimal setup. Clone it, point it at a working dir, and
-you're in a shell with both agents installed, your config mirrored, and your tooling ready.
+pointed at any model/provider, with minimal setup. One binary: it builds the container,
+mirrors your config, wires the provider into both agents, and drops you into a shell.
 
 ```bash
-git clone git@github.com:childish-sambino/piecove.git ~/Workspace/piecove
-cd ~/Workspace/piecove
-cp .env.example .env          # set PROVIDER + MODEL + PIECOVE_API_KEY
-./run.sh ~/code/your-repo     # shell at the repo; run `claude` or `pi`
+go install github.com/childish-sambino/piecove/cmd/piecove@latest
+piecove init                   # writes ~/.piecove/config.env — set PROVIDER + MODEL + key
+piecove run ~/code/your-repo   # shell at the repo; run `claude` or `pi`
 ```
 
 ## Why
 
 - **Isolation.** The agent only sees the working dir you mount (plus your read-only config).
-  It can't touch the rest of your machine, so you can let it run freely.
+  It can't touch the rest of your machine, so you can let it run freely. A permission gate
+  covers the outward calls the filesystem sandbox doesn't, and every gating decision is
+  written to an audit log.
 - **Any model, any provider.** One set of vars (`PROVIDER` / `MODEL` / `PIECOVE_API_KEY`)
   wires up *both* Claude Code and Pi. Swap GLM-5.2 on Fireworks for Claude on Anthropic by
   editing one line.
-- **Minimal setup.** Ruby version is auto-detected from the repo; Postgres auto-starts when
-  the repo needs it; git identity and your `~/.claude` config come from your machine. A
-  teammate's whole setup is: clone, set a key, run.
+- **Cost you can see.** Every turn is metered against a cross-provider price table, compared
+  to a frontier baseline, budget-capped, and reported per day/model with `piecove cost`.
+- **Minimal setup.** The binary embeds the whole container definition — no clone needed.
+  Ruby version is auto-detected from the repo; Postgres/Redis auto-start when the repo needs
+  them; a detected Rails app boots its own dev stack; git identity and your `~/.claude`
+  config come from your machine.
 
 ## What's in the box
 
@@ -29,27 +33,29 @@ cp .env.example .env          # set PROVIDER + MODEL + PIECOVE_API_KEY
 | Claude Code | `claude` | Anthropic's CLI, pointed at your configured provider |
 | Pi | `pi` | badlogic/earendil's minimal agent CLI |
 | GitHub CLI | `gh` | commit/push, clone private repos (token auth) |
-| Heroku CLI | `heroku` | official |
 | Toolchains | `ruby` `node` `python3` | Ruby auto-detected per repo; Node 22 + Python 3.11 |
 
-Other services (Linear, Better Stack, etc.) are reached through **MCP** rather than a bundled
-CLI — see [MCP](#mcp) below.
-
-Plus `git`, `ripgrep`, `psql`, and native-build libs so most gems/wheels compile.
+Plus `git`, `ripgrep`, `psql`, and native-build libs so most gems/wheels compile. Need more
+baked in? Set `PIECOVE_EXTRA_APT` / `PIECOVE_EXTRA_NPM` in your config (e.g.
+`PIECOVE_EXTRA_NPM=heroku`). Other services (Linear, Sentry, a browser, …) are reached
+through **MCP** rather than bundled CLIs — see [MCP](#mcp).
 
 ## Prerequisites
 
-A container runtime providing `docker` + compose. **OrbStack** is recommended on macOS
-(`brew install --cask orbstack`) — fast, light, host networking that "just works." Docker
-Desktop or Colima also work.
+- A container runtime providing `docker` + compose. **OrbStack** is recommended on macOS
+  (`brew install --cask orbstack`); Docker Desktop and Colima also work, and any stock
+  docker + compose works on Linux.
+- Go 1.24+ to `go install` (or grab a release binary).
+
+`piecove doctor` checks all of this and tells you what's missing.
 
 ## Setup
 
 ```bash
-cp .env.example .env
+piecove init
 ```
 
-Set three things in `.env`:
+Edit `~/.piecove/config.env` — three things:
 
 - `PROVIDER` — `fireworks` | `zai` | `openrouter` | `anthropic` | `bedrock` | `local`
 - `MODEL` — leave blank for the provider default, or pick one
@@ -58,12 +64,12 @@ Set three things in `.env`:
 Then run it against a repo:
 
 ```bash
-./run.sh ~/code/your-repo         # shell in the repo
-./run.sh .                         # shell in the current dir
-./run.sh ~/code/your-repo --db     # force-start Postgres
-./run.sh ~/code/your-repo --no-db  # skip Postgres even if detected
-./run.sh ~/code/your-repo --no-serve # don't auto-boot a detected Rails app
-./run.sh ~/code/your-repo claude   # run a command instead of a shell
+piecove run ~/code/your-repo             # shell in the repo
+piecove run .                            # shell in the current dir
+piecove run ~/code/your-repo --db        # force-start Postgres
+piecove run ~/code/your-repo --no-db     # skip Postgres even if detected
+piecove run ~/code/your-repo --no-serve  # don't auto-boot a detected Rails app
+piecove run ~/code/your-repo -- claude   # run a command instead of a shell
 ```
 
 You land in a bash shell at `/workspace` (your repo). Run `claude`, run `pi`, or look around.
@@ -80,8 +86,8 @@ a generated Pi `~/.pi/agent/models.json`:
 | `zai` | api.z.ai | `glm-5.2` | Cheap; no explicit "won't train" guarantee |
 | `openrouter` | openrouter.ai | `z-ai/glm-5.2` | One key, many models incl. Claude; set account ZDR |
 | `anthropic` | api.anthropic.com | `claude-opus-4-8` | Real Claude; key, or blank for subscription |
-| `bedrock` | AWS | (set `MODEL`) | Set `AWS_*` in `.env` instead of a key |
-| `local` | localhost:11434 | `qwen2.5-coder:7b` | Ollama on your Mac (host networking); Pi only; $0/token |
+| `bedrock` | AWS | (set `MODEL`) | Set `AWS_*` in config.env instead of a key |
+| `local` | localhost:11434 | `qwen2.5-coder:7b` | Ollama on your host (host networking); Pi only; $0/token |
 
 ## The two agents
 
@@ -111,7 +117,7 @@ The OAuth login persists in the home volume (log in once). Claude Code is first-
 draws on your plan; Pi can `/login` too, but Anthropic meters third-party harnesses per-token
 as extra usage, so an API key or open-model provider is more predictable for Pi.
 
-## Permission allowlist (gating CLI/network calls)
+## Permission gate (CLI/network calls)
 
 The container is the filesystem sandbox, but the agent can still make outward calls (`gh push`,
 `curl`, `psql` to prod). To gate those:
@@ -120,17 +126,29 @@ The container is the filesystem sandbox, but the agent can still make outward ca
 - **Pi** gets a bundled extension (`pi-allowlist.ts`, auto-loaded) that reads the **same**
   `permissions.allow`/`deny` — so you define patterns in **one place** and both agents honor
   them. It gates the `bash` tool: allowlisted commands run, denied ones are blocked, anything
-  else **prompts** (Allow once / Allow for session / Reject). Compound commands are split on
-  `&& || ; |`, so an allowed prefix can't smuggle in an unapproved call. Headless (no UI) →
-  unmatched commands are blocked, fail-safe.
+  else **prompts** (Allow once / Allow for session / Reject). Headless (no UI) → unmatched
+  commands are blocked, fail-safe.
 
 Rules come from your home `~/.claude/settings.json` **and** the launched repo's
-`.claude/settings.json` (+ `settings.local.json`), merged — so a project's own allow/deny list
-applies too, the same way Claude Code layers project settings over user settings.
+`.claude/settings.json` (+ `settings.local.json`), merged — the same way Claude Code layers
+project settings over user settings. All three Claude pattern shapes work: exact
+(`Bash(git status)`), prefix (`Bash(git commit:*)`), and glob (`Bash(npm run *)`).
+
+The gate is built to resist smuggling:
+
+- Compound commands are split (quote- and escape-aware) on `&& || ; | &` and newlines — every
+  segment must pass, so `git status && curl evil.com` prompts even though `git status` is safe.
+- Command/process substitution disqualifies a segment: `echo $(curl evil.com)` prompts.
+- The "safe floor" of never-prompt read commands (`cat`, `rg`, `git status`, …) excludes
+  anything with a command-execution escape hatch — `sed`/`awk` aren't on it (GNU `sed e`,
+  `awk system()`), and `find -exec` / `fd -x` disqualify.
+- Every decision — allowed, denied, prompted and what you chose, blocked headless — is
+  appended to `~/.pi/agent/piecove-audit.jsonl` in the home volume, so you can review exactly
+  what the agent ran after a long unattended session.
 
 ## MCP
 
-Both agents can use MCP servers, so you reach Linear, Better Stack, a database, a browser, etc.
+Both agents can use MCP servers, so you reach Linear, Sentry, a database, a browser, etc.
 as tools instead of bundling a CLI per service.
 
 - **Claude Code** has native MCP. Project `.mcp.json` servers are auto-approved (the entrypoint
@@ -160,13 +178,13 @@ persists in the home volume) → `~/.config/mcp/mcp.json` (user global).
 > account-scoped connectors authenticated through your Claude login, not local `.mcp.json`
 > entries. Claude Code picks them up from your account (run `claude-sub` → `/login`); Pi does
 > **not** inherit them. To give Pi one of those, add it as an explicit `url` + `auth` server in
-> `.mcp.json` — it authenticates independently (OAuth opens via `host-bridge`).
+> `.mcp.json` — it authenticates independently (OAuth opens via `piecove bridge`).
 
 ## Cost lab
 
-The point of piecove is running a capable agent for a fraction of Claude's price. The cost lab
-(`pi-costlab.ts`, a bundled Pi extension, auto-loaded) is the instrument panel that proves it —
-it meters every turn, shows you where the money goes, and gives you the levers to spend less.
+The point of piecove is running a capable agent for a fraction of the frontier price. The cost
+lab (`pi-costlab.ts`, a bundled Pi extension, auto-loaded) is the instrument panel that proves
+it — it meters every turn, shows you where the money goes, and gives you the levers to spend less.
 
 Everything is priced from **one shared table** (`pricing.json`, `$/1M tokens`), not the
 provider's own invoice, so a GLM turn and an Opus turn are measured on the same ruler. Each
@@ -174,13 +192,13 @@ turn's cost is recomputed against the Opus baseline, so "what would this have co
 is always on screen.
 
 A compact readout lives **always-on in the footer** (next to the git branch), refreshed every
-turn so you never have to ask for it — only the parts with data yet show up:
+turn — only the parts with data yet show up:
 
 ```text
 ⛁ piecove $0.610 · saved 94% · cache 93% · 12% of $5.00
 ```
 
-Run `/cost` when you want the full picture:
+Run `/cost` in a Pi session for the full picture (`/cost json` for machine-readable):
 
 ```text
 ┌─ piecove · cost this session ─────────────────────
@@ -199,6 +217,13 @@ Run `/cost` when you want the full picture:
 │  frontier    3  ███░░░░░░░
 │  advisory: routing to the classified tier would've cost $0.400 → save $0.430 more
 └────────────────────────────────────────────────────
+```
+
+And on your host, across sessions:
+
+```bash
+piecove cost           # spend by day and by model, all-time
+piecove cost --today   # just today
 ```
 
 What each part is doing:
@@ -225,16 +250,16 @@ What each part is doing:
 
 ### Benchmark scorecard
 
-`bench/` answers the real question — *is the cheap model actually good enough?* — with numbers
-instead of vibes. A fixed task suite (`tasks.json`) runs headlessly across whatever models you
-name, each result verified deterministically, cost read from the ledger:
+The bench suite answers the real question — *is the cheap model actually good enough?* — with
+numbers instead of vibes. A fixed task suite runs headlessly across whatever models you name,
+each result verified deterministically, cost read from the ledger:
 
 ```bash
 # inside the container, with an OpenRouter key (one key serves every model below)
-bash bench/run.sh z-ai/glm-5.2 anthropic/claude-opus-4.8 openai/gpt-5.5
+bash /opt/piecove/bench/run.sh z-ai/glm-5.2 anthropic/claude-opus-4.8 openai/gpt-5.5
 ```
 
-`scorecard.mjs` ranks by cost-per-success and prints the one line worth screenshotting:
+The scorecard ranks by cost-per-success and prints the one line worth screenshotting:
 
 ```text
 | Model         | Quality      | Total cost | Cost/success | Avg s |
@@ -256,23 +281,23 @@ benchmark against work that looks like *yours*, not a toy.
 - **Rails app** — auto-serves the full dev stack (web, JS watchers, Sidekiq, Redis); see
   [Rails dev stack](#rails-dev-stack-auto-serve).
 - **Git identity** — from your host `git config --global user.name`/`user.email`.
-- **Your Claude config** — `~/.claude/CLAUDE.md`, `skills/`, and `settings.json` are staged
-  (symlinks resolved) and mirrored to *both* agents; project `.mcp.json` servers are
+- **Your Claude config** — `~/.claude/CLAUDE.md`, `skills/`, `settings.json`, and `hooks/` are
+  staged (symlinks resolved) and mirrored to *both* agents; project `.mcp.json` servers are
   auto-approved.
 - **The launched repo's `.claude/`** — a project can ship its own config, and both agents pick
   it up on top of your home config. Claude Code reads it natively (root `CLAUDE.md`,
   `.claude/skills`, `.claude/settings.json`). For Pi, the entrypoint bridges the Claude layout:
   `--skill .claude/skills`, `--append-system-prompt .claude/CLAUDE.md`, and the allowlist merges
   `.claude/settings.json` permissions. The container also sets Pi's `defaultProjectTrust:
-  "always"` — you mounted this repo to work on it, so its project resources (skills, context,
-  `.pi` extensions, `.mcp.json`) apply without a per-run trust prompt.
+  "always"` — you mounted this repo to work on it, so its project resources apply without a
+  per-run trust prompt.
 
 ## GitHub access
 
-Set `GH_TOKEN` in `.env` (fine-grained, expiring, scoped to the repos you need). The entrypoint
-runs `gh auth setup-git` and rewrites GitHub SSH remotes to HTTPS, so `git push`, `git clone`,
-and `gh` authenticate via the token — no SSH keys in the container. The agent can read its own
-env, so keep the token's scope small and revocable.
+Set `GH_TOKEN` in config.env (fine-grained, expiring, scoped to the repos you need). The
+entrypoint runs `gh auth setup-git` and rewrites GitHub SSH remotes to HTTPS, so `git push`,
+`git clone`, and `gh` authenticate via the token — no SSH keys in the container. The agent can
+read its own env, so keep the token's scope small and revocable.
 
 ## Postgres (for specs)
 
@@ -286,18 +311,18 @@ RAILS_ENV=test bin/rails db:prepare && bundle exec rspec
 
 ## Rails dev stack (auto-serve)
 
-Point run.sh at a Rails repo and the whole dev stack comes up with **zero config in the repo
-itself** — web, JS/CSS watchers, Sidekiq, Redis, Postgres:
+Point `piecove run` at a Rails repo and the whole dev stack comes up with **zero config in the
+repo itself** — web, JS/CSS watchers, Sidekiq, Redis, Postgres:
 
 - **Detection** — `config/application.rb` + a `Gemfile` marks it a Rails app (`--no-serve`
   skips, `--serve` forces). Redis auto-starts when the Gemfile has sidekiq/redis or the cable
-  adapter is redis; Postgres via the existing `--db` detection.
+  adapter is redis; Postgres via the existing db detection.
 - **Bootstrap, then boot** — in the background, `piecove-serve` fills in whatever's missing
   (`bundle install`, JS deps via npm/yarn/pnpm picked by lockfile, `bin/rails db:prepare`) and
   then runs the app's **own** dev entry: `bin/dev`, else `foreman start -f Procfile.dev`, else
   `bin/rails server`. Your Procfile is the source of truth — piecove only adds a `sidekiq`
   process if the Gemfile wants it and the Procfile doesn't run it.
-- **On your Mac** — host networking means the app is just there: `http://localhost:3000` (and
+- **On your host** — host networking means the app is just there: `http://localhost:3000` (and
   the JS watcher's port) open directly.
 
 Shell entry **waits for the app to actually answer on its port**, streaming the bootstrap log
@@ -312,93 +337,124 @@ serve-stop    # stop the whole stack (web, watchers, sidekiq)
 serve-start   # boot it again
 ```
 
-The stack lives and dies with the container — each `run.sh` gets a fresh one. First boot pays
-for `bundle install`; the gem cache persists in a volume, so next launches skip straight to
-booting.
+The stack lives and dies with the container — each `piecove run` gets a fresh one. First boot
+pays for `bundle install`; the gem cache persists in a volume, so next launches skip straight
+to booting.
 
 ### Parallel instances (one issue per worktree)
 
-Run several instances of the same app side by side — each `run.sh` is its own container, and
-each served app gets a **slot** so nothing crosses:
+Run several instances of the same app side by side — each `piecove run` is its own container,
+and each served app gets a **slot** so nothing crosses:
 
 ```bash
 git -C ~/code/app worktree add ../app-issue-42 sam/issue-42
-./run.sh ~/code/app            # slot 0 → http://localhost:3000
-./run.sh ~/code/app-issue-42   # slot 1 → http://localhost:3001 (auto-picked)
+piecove run ~/code/app            # slot 0 → http://localhost:3000
+piecove run ~/code/app-issue-42   # slot 1 → http://localhost:3001 (auto-picked)
 ```
 
 A slot means: **port** `3000+slot`; its **own Postgres database** (`<app>_dev_slot<N>` on the
 shared server, created by `db:prepare`) so branches never fight over migrations; and its **own
 Redis DB number**, so one instance's Sidekiq workers can't run jobs enqueued by another
-instance running different code. The first free port is picked automatically; `--slot=N` pins
+instance running different code. The first free port is picked automatically; `--slot N` pins
 it. Slot 0 keeps the app's own defaults untouched.
 
 Caveats: JS watchers (Vite/esbuild) with their own hardcoded ports can still collide across
 instances, and a `Procfile.dev` that hardcodes `-p 3000` beats the `PORT` env — parameterize it
 (`-p ${PORT:-3000}`) if you hit that.
 
-## Container ↔ Mac bridge (`host-bridge`)
+## Container ↔ host bridge
 
 The container can't open your browser or reach your speakers, so two things are handed to your
-Mac via `./.auth`, and `host-bridge.sh` (run on your Mac) handles them:
+host via `~/.piecove/auth`, and `piecove bridge` handles them:
 
-- **OAuth URLs** — MCP/agent/`gh` logins write the URL to a file; `host-bridge` opens it in your
+- **OAuth URLs** — MCP/agent/`gh` logins write the URL to a file; the bridge opens it in your
   real browser (no clicking line-wrapped links). The callback reaches the container via host
   networking.
-- **Voice notifications** — TTS hooks' `say` calls are forwarded; `host-bridge --watch` plays
-  them through your Mac's real `say`.
+- **Voice notifications** — TTS hooks' `say` calls are forwarded; `piecove bridge --watch`
+  plays them through macOS `say` (or espeak-ng/spd-say on Linux; printed if neither exists).
 
 ```bash
-./host-bridge --watch     # side tab: opens auth URLs AND speaks notifications
-./host-bridge             # one-shot: open a pending auth URL
+piecove bridge --watch    # side tab: opens auth URLs AND speaks notifications
+piecove bridge            # one-shot: open a pending auth URL
 ```
 
-## Persistence & volumes
+## Persistence & state
 
-Two named volumes (one per state lifecycle):
+On your host, everything lives under `~/.piecove/`:
+
+- `config.env` — your provider choice and keys (chmod 600; never leaves your machine except
+  as env to the container).
+- `runtime/` — the materialized container definition, refreshed from the binary each run.
+- `stage/` — your staged `~/.claude` bits; `auth/` — the bridge handoff.
+
+Two named docker volumes (one per state lifecycle):
 
 - **`piecove-home`** (external) — all your agent state in one place: Claude Code auth/sessions,
-  Pi auth (incl. the MCP adapter), shell history. Marked `external` so `docker compose down -v` can't wipe
-  it; `run.sh` ensures it exists. Remove deliberately with `docker volume rm piecove-home`.
-- **`piecove-pgdata`** — disposable Postgres data, only with `--db`, recreatable via `db:prepare`.
-
-Everything else is a bind mount: your repo (`/workspace`), your staged config (`/agent-config`,
-read-only), and the `./.auth` handoff dir.
+  Pi auth (incl. the MCP adapter), shell history, the cost ledger and audit log. Marked
+  `external` so `docker compose down -v` can't wipe it; the CLI ensures it exists. Remove
+  deliberately with `docker volume rm piecove-home`.
+- **`piecove-pgdata`** — disposable Postgres data, recreatable via `db:prepare`. (Plus
+  `piecove-bundle`, the gem cache.)
 
 ## Isolation & data privacy
 
-The agent is jailed to the mounted working dir (filesystem isolation), and the allowlist gates
-its outward `bash` calls. Host networking is on (needed for OAuth callbacks and a local DB), so
-the container shares your Mac's network — no network isolation. **Whether your code trains a
-model depends on the provider:** Fireworks is zero-retention by default; OpenRouter is ZDR only
-if you set the account data policy to deny training/retention; Z.ai has no explicit no-train
-commitment. Pick the provider that matches your sensitivity.
+The agent is jailed to the mounted working dir (filesystem isolation), the allowlist gates its
+outward `bash` calls, and the audit log records every decision. The container runs as a
+non-root user with `no-new-privileges`. Host networking is on (needed for OAuth callbacks and
+a local DB), so the container shares your machine's network — no network isolation. **Whether
+your code trains a model depends on the provider:** Fireworks is zero-retention by default;
+OpenRouter is ZDR only if you set the account data policy to deny training/retention; Z.ai has
+no explicit no-train commitment. Pick the provider that matches your sensitivity.
+
+Secrets note: `PIECOVE_API_KEY` and `GH_TOKEN` are visible to the agent as env vars (it needs
+them to work). Scope them tightly and rotate — treat anything the agent can read as
+potentially exfiltratable by a prompt-injected agent, and use the deny list for the commands
+that worry you.
 
 ## Notes & gotchas
 
 - Prompt caching is Anthropic-specific; non-Anthropic providers may ignore it, so expect to pay
   full input tokens each turn. The `/cost` cache-hit meter shows whether it's actually landing.
 - Running a test suite needs the repo's deps installed in the container (`bundle install` /
-  `npm install`) — host builds are the wrong platform. Add system libs to the Dockerfile if a
-  native gem/wheel needs one.
+  `npm install`) — host builds are the wrong platform. Use `PIECOVE_EXTRA_APT` if a native
+  gem/wheel needs a system lib.
 - Pi wiring (models.json, skills, allowlist) is built to Pi's docs; confirm it on your first Pi
   session and adjust `~/.pi/agent/models.json` if a provider's endpoint differs.
-- `.env`, `.auth/`, and `.agent-config/` are gitignored — never commit your keys.
+- Voice notifications assume your Claude `settings.json` hooks shell out to a
+  `~/.claude/hooks/claude-notify.sh`-style script; without one, the bridge just has nothing
+  to play.
 
 ## Layout
 
 ```text
-run.sh              launcher: resolves the repo, auto-detects Ruby/Postgres, builds, runs
-Dockerfile          the image: toolchains + Claude Code + Pi + gh + heroku
-entrypoint.sh       wires the provider, mirrors config, sets up git/auth, drops to a shell
-serve.sh            piecove-serve: bootstraps + runs a Rails app's dev stack in-container
-docker-compose.yml  the piecove service (+ optional db/redis) and volumes
-pi-allowlist.ts     Pi extension enforcing your Claude permissions.allow
-pi-costlab.ts       Pi extension: metering, budget guard, router, /cost dashboard
-pricing.json        cross-provider price table the cost lab meters against
-bench/              headless cost-vs-quality benchmark suite + scorecard
-host-bridge.sh      Mac-side: opens OAuth URLs and plays voice notifications
-browser-open.sh     in-container browser shim (hands OAuth URLs to the Mac)
-say-forward.sh      in-container `say` shim (forwards TTS to the Mac)
-.env.example        all configuration options
+cmd/piecove/               the CLI entry (init, run, bridge, cost, doctor)
+internal/
+  cli/                     command implementations
+  config/                  ~/.piecove state dir + config.env parsing
+  detect/                  Ruby/Postgres/Rails/Redis/slot detection
+  stage/                   ~/.claude staging (symlinks resolved)
+  dockerx/                 docker/compose discovery + invocation
+  ledger/                  cost-ledger parsing for `piecove cost`
+  bridge/                  host side of OAuth/TTS handoff
+  runtime/assets/          the embedded container definition:
+    Dockerfile, docker-compose.yml, entrypoint.sh, serve.sh
+    extensions/            pi-allowlist.ts · pi-costlab.ts · pi-notify.ts
+    shims/                 in-container xdg-open/say → host handoff
+    bench/                 cost-vs-quality benchmark suite
+    pricing.json           cross-provider price table
+    config.env.example     all configuration options
+tests/                     node tests for the permission gate
 ```
+
+## Contributing
+
+Issues and PRs welcome. The bar for changes:
+
+- `go build ./... && go vet ./... && go test ./...` clean, `gofmt -l .` empty.
+- `node --experimental-strip-types --test tests/allowlist.test.ts` green — especially for any
+  change to the permission gate; new gate behavior needs a test that fails without it.
+- Shell assets pass `bash -n` and `shellcheck -S warning` (CI enforces both).
+
+## License
+
+[MIT](LICENSE)

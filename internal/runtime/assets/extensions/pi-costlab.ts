@@ -275,7 +275,12 @@ function loadSnapshotByKey(key: string | null): boolean {
     state.routes = { local: 0, standard: 0, frontier: 0, ...(s.routes || {}) };
     state.warned = { soft: false, hard: false, ...(s.warned || {}) };
     if (typeof s.budget === "number") state.budget = s.budget; // honor an in-session raise
-    state.models = new Map((s.models || []).map((m: any) => [m.id, { label: m.label, usage: m.usage, cost: m.cost, calls: m.calls }]));
+    state.models = new Map((s.models || []).map((m: any) => [m.id, {
+      label: String(m.label ?? "unknown"),
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, ...(m.usage || {}) },
+      cost: Number(m.cost) || 0,
+      calls: Number(m.calls) || 0,
+    }]));
     return true;
   } catch { return false; }
 }
@@ -366,7 +371,7 @@ export default function (pi: any) {
       : state.turnTier === "standard" ? cheapPrice() : price;
     state.routedCost += costOf(usage, tierPrice);
 
-    persist({ ts: Date.now(), session: state.session, model, tier: state.turnTier, usage, cost });
+    persist({ ts: Date.now(), session: state.session, provider: process.env.PROVIDER || "", model, tier: state.turnTier, usage, cost });
     updateStatus(ctx); // refresh the always-on footer
 
     // Budget guard: warn at 80%, then STOP the session on breach (resumable).
@@ -402,10 +407,15 @@ export default function (pi: any) {
     }
   });
 
-  // The visualization.
+  // The visualization. `/cost json` emits the machine-readable summary (what
+  // the bench harness and host-side `piecove cost` build on).
   pi.registerCommand("cost", {
-    description: "Show the piecove cost dashboard (spend, savings, cache, routing, budget)",
-    handler: async (_args: string, ctx: any) => {
+    description: "Show the piecove cost dashboard (spend, savings, cache, routing, budget); `/cost json` for raw data",
+    handler: async (args: string, ctx: any) => {
+      if (String(args || "").trim() === "json") {
+        ctx?.ui?.notify?.(JSON.stringify(summary(), null, 2), "info");
+        return;
+      }
       ctx?.ui?.notify?.(dashboard(), "info");
     },
   });

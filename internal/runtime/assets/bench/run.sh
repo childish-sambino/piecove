@@ -2,8 +2,8 @@
 # piecove benchmark — run a fixed task suite across models and score cost vs quality.
 #
 # Run this INSIDE the container (it needs `pi`, node, jq, and the cost-lab ledger).
-# The bench dir rides in via the workspace mount or a bind — from the container shell:
-#   bash /path/to/bench/run.sh z-ai/glm-5.2 anthropic/claude-opus-4.8 openai/gpt-5.5
+# It is baked into the image — from the container shell:
+#   bash /opt/piecove/bench/run.sh z-ai/glm-5.2 anthropic/claude-opus-4.8 openai/gpt-5.5
 #
 # Every model id must be served by the CURRENT provider's endpoint (e.g. all of the
 # above are OpenRouter slugs when PROVIDER=openrouter — one key, many models). The
@@ -18,7 +18,7 @@ MODELS=("$@")
 PROVIDER_NAME="${PI_BENCH_PROVIDER:-piecove}"
 MODELS_JSON="$HOME/.pi/agent/models.json"
 LEDGER="$HOME/.pi/agent/piecove-cost/latest.json"
-RESULTS="./results.jsonl"
+RESULTS="${TMPDIR:-/tmp}/piecove-bench-results.jsonl"
 : > "$RESULTS"
 mkdir -p /tmp/bench
 

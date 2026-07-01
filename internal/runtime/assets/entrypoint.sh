@@ -5,16 +5,17 @@
 set -u
 
 CLAUDE_DIR="$HOME/.claude"
-STAGE="/agent-config"          # the user's ~/.claude bits, staged read-only by run.sh
+STAGE="/agent-config"          # the user's ~/.claude bits, staged read-only by the CLI
 mkdir -p "$CLAUDE_DIR"
 
 # ── Mirror the user's Claude Code config (CLAUDE.md, skills, settings) ─────────
 if [ -d "$STAGE" ]; then
   [ -e "$STAGE/CLAUDE.md" ] && ln -sfn "$STAGE/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"
   [ -e "$STAGE/skills" ]    && ln -sfn "$STAGE/skills"    "$CLAUDE_DIR/skills"
-  # claude-notify.sh (voice notifications). settings.json references it via
-  # ~/.claude/hooks/, so the symlink makes Claude Code's hooks resolve in here —
-  # and Pi's notify extension shells out to the same path.
+  # hooks/ carries the user's notification scripts (e.g. claude-notify.sh).
+  # settings.json references them via ~/.claude/hooks/, so the symlink makes
+  # Claude Code's hooks resolve in here — and Pi's notify extension shells out
+  # to the same path.
   [ -e "$STAGE/hooks" ]     && ln -sfn "$STAGE/hooks"     "$CLAUDE_DIR/hooks"
   if [ -f "$STAGE/settings.json" ]; then
     # Copy (not symlink) so Claude Code can write state; preserve the chosen theme
@@ -43,7 +44,7 @@ case "$PROVIDER" in
   openrouter) A_BASE="https://openrouter.ai/api";          : "${MODEL:=z-ai/glm-5.2}" ;;
   anthropic)  PI_PROVIDER="anthropic";      : "${MODEL:=claude-opus-4-8}" ;;
   bedrock)    PI_PROVIDER="amazon-bedrock" ;;
-  # Local models via Ollama on your Mac (reachable at localhost thanks to host
+  # Local models via Ollama on your host (reachable at localhost thanks to host
   # networking) — OpenAI-compatible, so Pi only. Marginal cost: $0.
   local)      A_BASE="http://localhost:11434/v1"; PI_API="openai-completions"; : "${MODEL:=qwen2.5-coder:7b}" ;;
   *) echo "piecove: unknown PROVIDER='$PROVIDER' (use fireworks|zai|openrouter|anthropic|bedrock|local)" >&2 ;;
@@ -126,18 +127,18 @@ else
   PI_ALIAS="# set MODEL to enable the pi alias; otherwise: pi --provider $PI_PROVIDER --model <id>$PI_PROJECT_FLAGS"
 fi
 
-# ── Rails dev stack: auto-serve the mounted app (run.sh --no-serve to skip) ────
+# ── Rails dev stack: auto-serve the mounted app (piecove run --no-serve skips) ──
 # piecove-serve bootstraps (bundle/JS deps/db:prepare) then runs the app's own
 # bin/dev / Procfile.dev processes, with Sidekiq gap-filled. setsid gives it its
 # own process group so `serve-stop` can kill the whole stack, detached from this
-# shell. It dies with the container — each run.sh gets a fresh stack.
+# shell. It dies with the container — each `piecove run` gets a fresh stack.
 SERVE_BANNER=""
 if [ "${PIECOVE_SERVE:-}" = "1" ] && [ -f /workspace/config/application.rb ]; then
   # Slot wiring: parallel instances of the same app each get their own port,
   # database, and Sidekiq queues (slot 0 = the app's own defaults).
   SLOT="${PIECOVE_SLOT:-0}"
   export PORT=$((3000 + SLOT))       # rails server reads PORT; foreman gets -p
-  export BINDING=0.0.0.0             # bind beyond loopback so the Mac can reach it
+  export BINDING=0.0.0.0             # bind beyond loopback so the host can reach it
   export REDIS_URL="${REDIS_URL:-redis://localhost:6379/$SLOT}"  # per-slot queue namespace
   if [ "$SLOT" -gt 0 ] && grep -qs "postgresql" /workspace/config/database.yml; then
     # Own database on the shared Postgres so branches don't fight over migrations;
@@ -149,8 +150,8 @@ if [ "${PIECOVE_SERVE:-}" = "1" ] && [ -f /workspace/config/application.rb ]; th
 
   # Block until the app answers on its port, streaming the bootstrap log as
   # progress — so the shell (or command) starts with everything actually up.
-  # Escape hatches: Ctrl-C skips the wait, run.sh --no-wait never waits, a dead
-  # stack or the timeout drops you to the shell with a pointer at serve-logs.
+  # Escape hatches: Ctrl-C skips the wait, --no-wait never waits, a dead stack
+  # or the timeout drops you to the shell with a pointer at serve-logs.
   if [ "${PIECOVE_WAIT:-1}" != "0" ]; then
     echo "piecove: waiting for the app on :$PORT (Ctrl-C to drop to the shell now)…"
     tail -n +1 -F /tmp/piecove-serve.log 2>/dev/null &

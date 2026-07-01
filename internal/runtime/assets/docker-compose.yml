@@ -1,42 +1,55 @@
+# Materialized into ~/.piecove/runtime by the piecove binary — edits here are
+# overwritten on the next run. The binary passes interpolation vars (WORKSPACE_DIR,
+# RUBY_VERSION, PIECOVE_*) via the process env; config.env reaches the container
+# through env_file.
+name: piecove
+
 services:
   piecove:
     build:
       context: .
       args:
-        # Auto-detected from the working dir by run.sh; falls back to this.
+        # Auto-detected from the working dir by the CLI; falls back to this.
         RUBY_VERSION: ${RUBY_VERSION:-3.4.1}
+        # Optional extra packages baked into your image (set in config.env).
+        EXTRA_APT_PACKAGES: ${PIECOVE_EXTRA_APT:-}
+        EXTRA_NPM_PACKAGES: ${PIECOVE_EXTRA_NPM:-}
     image: piecove
-    env_file: .env
+    env_file: ../config.env
     init: true
     stdin_open: true
     tty: true
+    # The container is the filesystem sandbox, not a privilege boundary beyond
+    # that — but don't let anything escalate inside it either.
+    security_opt:
+      - no-new-privileges:true
     # Host networking so MCP OAuth callbacks (random loopback ports) reach the
-    # container, and so a Postgres on your Mac's localhost is reachable. Tradeoff:
-    # shares your Mac's network (no network isolation); filesystem isolation stays.
+    # container, and so a Postgres on your host's localhost is reachable. Tradeoff:
+    # shares your host's network (no network isolation); filesystem isolation stays.
     network_mode: "host"
     working_dir: /workspace
     environment:
-      # git identity from the host (run.sh fills these from your global git config)
+      # git identity from the host (the CLI fills these from your global git config)
       GIT_USER_NAME: ${GIT_USER_NAME:-}
       GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
-      # 1 when run.sh detected a Rails app (or --serve) → entrypoint auto-serves it
+      # 1 when the CLI detected a Rails app (or --serve) → entrypoint auto-serves it
       PIECOVE_SERVE: ${PIECOVE_SERVE:-}
       # Parallel-instance slot (port 3000+slot, per-slot db + redis DB number) and
       # the app's name for the per-slot database (container only sees /workspace).
       PIECOVE_SLOT: ${PIECOVE_SLOT:-0}
       PIECOVE_APP: ${PIECOVE_APP:-app}
-      # 0 (run.sh --no-wait) → don't block shell entry on the app booting
+      # 0 (piecove run --no-wait) → don't block shell entry on the app booting
       PIECOVE_WAIT: ${PIECOVE_WAIT:-1}
     volumes:
-      # The repo/working dir the agent operates on (run.sh sets WORKSPACE_DIR).
-      - ${WORKSPACE_DIR:-./workspace}:/workspace
+      # The repo/working dir the agent operates on.
+      - ${WORKSPACE_DIR:-.}:/workspace
       # Persist the agent user's home — all tool state in one volume: Claude Code
-      # (auth, theme, sessions), Pi, Sentry CLI login, shell history, etc.
+      # (auth, theme, sessions), Pi, shell history, the cost-lab ledger.
       - piecove-home:/home/agent
-      # Your ~/.claude bits (CLAUDE.md, skills, settings), staged read-only by run.sh.
-      - ./.agent-config:/agent-config:ro
-      # OAuth-URL / voice-notification handoff to ./host-bridge on your Mac.
-      - ./.auth:/auth
+      # Your ~/.claude bits (CLAUDE.md, skills, settings), staged read-only by the CLI.
+      - ../stage:/agent-config:ro
+      # OAuth-URL / voice-notification handoff to `piecove bridge` on your host.
+      - ../auth:/auth
       # Persist installed gems (GEM_HOME) so `bundle install` runs once, not every
       # launch. Seeded from the image on first use; survives across runs.
       - piecove-bundle:/usr/local/bundle
@@ -49,7 +62,8 @@ services:
     ports:
       - "${REDIS_PORT:-6379}:6379"
 
-  # Optional Postgres for running a repo's specs. Off by default; start with --db.
+  # Optional Postgres for running a repo's specs. Auto-started when the repo uses
+  # Postgres; force with --db / skip with --no-db.
   db:
     profiles: ["db"]
     image: postgres:16
@@ -68,9 +82,9 @@ services:
       retries: 30
 
 volumes:
-  # Your precious state (auth, sessions, history). Marked external so its lifecycle
-  # is independent of this compose project: predictable name (no project-dir prefix)
-  # and NOT wiped by `docker compose down -v`. run.sh ensures it exists.
+  # Your precious state (auth, sessions, history, cost ledger). Marked external so
+  # its lifecycle is independent of this compose project: predictable name and NOT
+  # wiped by `docker compose down -v`. The CLI ensures it exists.
   piecove-home:
     name: piecove-home
     external: true

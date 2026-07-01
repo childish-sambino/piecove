@@ -2,11 +2,11 @@
 # piecove-serve — bootstrap and run the mounted Rails app's dev stack.
 #
 # Auto-launched (backgrounded) by the entrypoint when the workspace is a Rails app
-# (run.sh --no-serve skips it, --serve forces it). It runs the app's OWN dev setup
+# (piecove run --no-serve skips it, --serve forces it). It runs the app's OWN dev setup
 # — bin/dev / Procfile.dev — rather than imposing one, and only fills the gaps:
 #   bundle install        when gems are missing (cached in the piecove-bundle volume)
 #   JS deps               npm / yarn / pnpm, picked by lockfile, when package.json exists
-#   bin/rails db:prepare  create + migrate the dev database (Postgres via --db service)
+#   bin/rails db:prepare  create + migrate the dev database (Postgres via the db service)
 #   sidekiq               when the Gemfile has it but the app's dev processes don't run it
 #
 # Logs to /tmp/piecove-serve.log — `serve-logs` tails it, `serve-stop` kills the
@@ -43,7 +43,7 @@ if [ -f package.json ]; then
 fi
 if [ -f bin/rails ]; then
   echo "→ bin/rails db:prepare"
-  bin/rails db:prepare || echo "✗ db:prepare failed (continuing — is Postgres up? run.sh --db)"
+  bin/rails db:prepare || echo "✗ db:prepare failed (continuing — is Postgres up? piecove run --db)"
 fi
 
 # Sidekiq gap-fill: the Gemfile wants it but the app's dev entry doesn't run it.
